@@ -50,6 +50,9 @@ export type Settings = {
   apiKey: string;
   model: string;
   system: string;
+  compressThreshold?: string;
+  compactPrompt?: string;
+  toolResultMaxChars?: string;
 };
 
 export type ManagedProcess = {

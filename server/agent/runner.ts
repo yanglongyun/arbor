@@ -2,7 +2,7 @@
 import * as functions from "./functions.js";
 import { truncateToolResult } from "./utils.js";
 
-const runTools = async (toolCalls, { signal, ctx }) => {
+const runTools = async (toolCalls, { signal, ctx, toolResultMaxChars = 12000 }) => {
   const out = [];
   for (const tc of toolCalls) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -24,7 +24,7 @@ const runTools = async (toolCalls, { signal, ctx }) => {
     out.push({
       role: "tool",
       tool_call_id: tc.id,
-      content: truncateToolResult(text),
+      content: truncateToolResult(text, toolResultMaxChars),
     });
   }
   return out;

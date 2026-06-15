@@ -20,6 +20,7 @@ export function ChatPanel({
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState("");      // 当前正在流式生成的 assistant 文本
+  const streamingRef = useRef("");
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [configured, setConfigured] = useState(true);  // 先假设已配置,避免初次闪现引导
@@ -50,30 +51,53 @@ export function ChatPanel({
   useEffect(() => {
     socket.send({ type: "subscribe", agentId: node.id });
     const matchesAgent = (p: any) => p.agentId === node.id;
-    const offDelta = socket.on("delta", (p: any) => {
+    const offText = socket.on("message", (p: any) => {
       if (!matchesAgent(p)) return;
-      if (p.content) setStreaming((prev) => prev + p.content);
+      if (p.content) {
+        streamingRef.current += p.content;
+        setStreaming(streamingRef.current);
+      }
     });
-    const offMsg = socket.on("message", (p: any) => {
+    const offInput = socket.on("input", (p: any) => {
       if (!matchesAgent(p)) return;
-      setStreaming("");                                     // 完整消息到了,清空流式 buffer
-      setMessages((prev) => [...prev, p.message]);
+      setMessages((prev) => [...prev, { ...p.message, _meta: p.meta }]);
       api.markNodeRead(node.id).catch(() => {});
     });
-    const offEnd = socket.on("end", (p: any) => {
+    const offToolCalls = socket.on("tool_calls", (p: any) => {
+      if (!matchesAgent(p)) return;
+      const msg = { role: "assistant", content: streamingRef.current || null, tool_calls: p.toolCalls || [] };
+      streamingRef.current = "";
+      setStreaming("");
+      setMessages((prev) => [...prev, msg as Message]);
+    });
+    const offToolResults = socket.on("tool_results", (p: any) => {
+      if (!matchesAgent(p)) return;
+      const toolMessages = (p.results || []).map((r: any) => r.message || { role: "tool", tool_call_id: r.toolCallId, content: r.content || "" });
+      setMessages((prev) => [...prev, ...toolMessages]);
+    });
+    const offDone = socket.on("done", (p: any) => {
       if (!matchesAgent(p)) return;
       setSending(false);
+      streamingRef.current = "";
       setStreaming("");
       loadMessages();
       api.markNodeRead(node.id).catch(() => {});
     });
+    const offAborted = socket.on("aborted", (p: any) => {
+      if (!matchesAgent(p)) return;
+      setSending(false);
+      streamingRef.current = "";
+      setStreaming("");
+      loadMessages();
+    });
     const offErr = socket.on("error", (p: any) => {
       if (!matchesAgent(p)) return;
       setSending(false);
+      streamingRef.current = "";
       setStreaming("");
     });
     return () => {
-      offDelta(); offMsg(); offEnd(); offErr();
+      offText(); offInput(); offToolCalls(); offToolResults(); offDone(); offAborted(); offErr();
       socket.send({ type: "unsubscribe", agentId: node.id });
     };
   }, [node.id, socket, loadMessages]);
@@ -180,12 +204,13 @@ export function ChatPanel({
 }
 
 // ──────────────────────────────────────────────────────────
-// 把 messages 按 tool_call_id 配对成 GroupedItem[]
+// 把 messages 按 tool_call_id 配对成渲染项,每个工具单独一条。
 // ──────────────────────────────────────────────────────────
 type GroupedItem =
   | { _id: string; type: "user"; message: Message }
   | { _id: string; type: "assistant_text"; content: string }
-  | { _id: string; type: "tool_group"; pairs: ToolPair[] };
+  | { _id: string; type: "compaction"; content: string }
+  | { _id: string; type: "tool"; pair: ToolPair };
 
 function groupMessages(messages: Message[]): GroupedItem[] {
   const items: GroupedItem[] = [];
@@ -201,6 +226,10 @@ function groupMessages(messages: Message[]): GroupedItem[] {
     }
 
     if (msg.role === "user") {
+      if (msg._meta?.kind === "compaction") {
+        items.push({ _id: `c:${msg._id}`, type: "compaction", content: String(msg.content || "") });
+        continue;
+      }
       items.push({ _id: `u:${msg._id}`, type: "user", message: msg });
       continue;
     }
@@ -212,12 +241,11 @@ function groupMessages(messages: Message[]): GroupedItem[] {
       }
       const tcs = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
       if (tcs.length > 0) {
-        const pairs: ToolPair[] = tcs.map((tc: any) => {
+        tcs.forEach((tc: any, i: number) => {
           const p: ToolPair = { call: tc, result: null };
           if (tc.id) pairIdx.set(String(tc.id), p);
-          return p;
+          items.push({ _id: `t:${msg._id}:${i}`, type: "tool", pair: p });
         });
-        items.push({ _id: `tg:${msg._id}`, type: "tool_group", pairs });
       }
       continue;
     }
@@ -279,16 +307,28 @@ function GroupedItem({ item }: { item: GroupedItem }) {
     );
   }
 
-  // tool_group
+  if (item.type === "compaction") {
+    return (
+      <div className="flex gap-3 max-w-3xl">
+        <div className="w-8 h-8 rounded bg-bg-panel border border-border flex items-center justify-center shrink-0 mt-0.5">
+          <Bot size={14} className="text-text-faint" />
+        </div>
+        <details className="flex-1 min-w-0 rounded-md border border-border bg-white overflow-hidden">
+          <summary className="cursor-pointer px-3 py-2 text-[12px] font-medium text-text-dim hover:bg-bg-hover">上下文压缩</summary>
+          <pre className="border-t border-border bg-bg-panel px-3 py-2 text-[12px] leading-relaxed text-text-dim whitespace-pre-wrap break-words max-h-72 overflow-auto">{item.content}</pre>
+        </details>
+      </div>
+    );
+  }
+
+  // tool
   return (
     <div className="flex gap-3 max-w-3xl">
       <div className="w-8 h-8 rounded bg-bg-panel border border-border flex items-center justify-center shrink-0 mt-0.5">
         <Bot size={14} className="text-text-faint" />
       </div>
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-        {item.pairs.map((p, i) => (
-          <ToolBlock key={p.call?.id || i} pair={p} />
-        ))}
+      <div className="flex-1 min-w-0">
+        <ToolBlock pair={item.pair} />
       </div>
     </div>
   );

@@ -8,6 +8,9 @@ const emptySettings: Settings = {
   apiKey: "",
   model: "",
   system: "",
+  compressThreshold: "12000",
+  compactPrompt: "",
+  toolResultMaxChars: "12000",
 };
 
 const inputClass =
@@ -94,6 +97,38 @@ export function SettingsPanel({ onSaved }: { onSaved?: (settings: Settings) => v
                 rows={8}
                 value={form.system}
                 onChange={(e) => set("system", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Compress Threshold">
+              <input
+                className={inputClass}
+                type="number"
+                min={0}
+                step={100}
+                value={form.compressThreshold || "12000"}
+                onChange={(e) => set("compressThreshold", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Tool Result Limit">
+              <input
+                className={inputClass}
+                type="number"
+                min={1000}
+                max={50000}
+                step={1000}
+                value={form.toolResultMaxChars || "12000"}
+                onChange={(e) => set("toolResultMaxChars", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Compaction Prompt" alignTop>
+              <textarea
+                className={`${inputClass} min-h-32 resize-y leading-relaxed`}
+                rows={6}
+                value={form.compactPrompt || ""}
+                onChange={(e) => set("compactPrompt", e.target.value)}
               />
             </Field>
 

@@ -28,7 +28,18 @@ const initDb = () => {
       agent_id        TEXT NOT NULL,
       body            TEXT NOT NULL,
       meta            TEXT,
+      usage           TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS compactions (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id         TEXT NOT NULL,
+      start_message_id INTEGER NOT NULL,
+      end_message_id   INTEGER NOT NULL,
+      summary          TEXT NOT NULL,
+      tokens           INTEGER NOT NULL DEFAULT 0,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     -- 调用:智能体之间的异步通信 + 状态机
@@ -64,13 +75,9 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_calls_callee  ON calls(callee_id, status);
   `);
 
-  const messageCols = db.prepare("PRAGMA table_info(messages)").all().map((c) => c.name);
-  if (messageCols.includes("conversation_id") && !messageCols.includes("agent_id")) {
-    db.exec("ALTER TABLE messages RENAME COLUMN conversation_id TO agent_id");
-  }
   db.exec(`
-    DROP INDEX IF EXISTS idx_messages_conv;
     CREATE INDEX IF NOT EXISTS idx_messages_agent ON messages(agent_id, id);
+    CREATE INDEX IF NOT EXISTS idx_compactions_agent ON compactions(agent_id, id);
   `);
 
   return db;

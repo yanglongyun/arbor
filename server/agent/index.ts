@@ -3,7 +3,7 @@
 // 接收已组装好的 messages + 配置 + ctx(工具实现需要的外部能力),
 // 跑 tool_call <-> tool_result 直到 final answer。
 // 不碰任何 server 状态(节点/消息持久化由调用方负责,通过 onEvent 回调通知)。
-// 默认走流式:每个 token 通过 onEvent({type:'delta', ...}) 回调。
+// 默认走流式:每个 token 通过 onEvent({type:'message', content}) 回调。
 
 import { callLm } from "./lm/index.js";
 import { tools } from "./tools.js";
@@ -17,18 +17,29 @@ const chat = async ({
   signal,
   onEvent = () => {},
   ctx,
-  maxRounds = 50,
+  beforeModelCall = null,
+  toolResultMaxChars = 12000,
 }) => {
   const work = Array.isArray(messages) ? [...messages] : [];
   let round = 0;
+  let lastUsage = null;
 
-  while (round++ < maxRounds) {
+  while (true) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    round += 1;
+    if (beforeModelCall) {
+      const nextMessages = await beforeModelCall({ messages: work, lastUsage, round });
+      if (Array.isArray(nextMessages)) {
+        work.length = 0;
+        work.push(...nextMessages);
+      }
+    }
 
-    // 流式调用:每个 chunk 触发 delta 事件
+    onEvent({ type: "start" });
+    // 流式调用:每个 chunk 触发 message 事件
     const onDelta = (chunk) => {
       // chunk = { content?: string, reasoning?: string }
-      onEvent({ type: "delta", ...chunk });
+      if (chunk.content) onEvent({ type: "message", content: chunk.content, reasoning: chunk.reasoning || "" });
     };
 
     const { message, usage } = await callLm(
@@ -38,7 +49,10 @@ const chat = async ({
       { signal, onDelta },
     );
 
-    if (usage) onEvent({ type: "usage", usage });
+    if (usage) {
+      lastUsage = usage;
+      onEvent({ type: "usage", usage });
+    }
 
     // tool calls
     if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
@@ -48,13 +62,17 @@ const chat = async ({
         tool_calls: message.tool_calls,
       };
       work.push(assistantMsg);
-      onEvent({ type: "assistant_tool_calls", message: assistantMsg });
+      onEvent({ type: "tool_calls", toolCalls: message.tool_calls });
 
-      const toolMessages = await runTools(message.tool_calls, { signal, ctx });
+      const toolMessages = await runTools(message.tool_calls, { signal, ctx, toolResultMaxChars });
       for (const tm of toolMessages) {
         work.push(tm);
-        onEvent({ type: "tool_result", message: tm });
       }
+      onEvent({ type: "tool_results", results: toolMessages.map((message) => ({
+        toolCallId: message.tool_call_id,
+        content: message.content,
+        message,
+      })) });
       continue;
     }
 
@@ -62,15 +80,10 @@ const chat = async ({
     const text = message.content ?? "";
     const finalMsg = { role: "assistant", content: text };
     work.push(finalMsg);
-    onEvent({ type: "done", message: finalMsg, text });
+    onEvent({ type: "done" });
     return { text, messages: work };
   }
 
-  const text = "(max rounds reached)";
-  const finalMsg = { role: "assistant", content: text };
-  work.push(finalMsg);
-  onEvent({ type: "done", message: finalMsg, text });
-  return { text, messages: work };
 };
 
 export { chat };

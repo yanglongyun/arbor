@@ -74,19 +74,20 @@ const handleConnection = (ws) => {
       const prompt = String(payload.prompt || "").trim();
       if (prompt) {
         const msg = { role: "user", content: prompt };
-        appendMessage(agentId, msg);
-        broadcastAll({ type: "message", agentId, message: msg });
+        const meta = { kind: "message" };
+        appendMessage(agentId, msg, meta);
+        broadcastAll({ type: "input", agentId, kind: "message", message: msg, meta });
       }
 
       try {
         await runAgent(agentId);
-        broadcastAll({ type: "end", agentId });
+        broadcastAll({ type: "done", agentId });
       } catch (error) {
         // 用户主动停止 = 一种"结束",也广播 end 让前端复位
         if (error?.name === "AbortError") {
-          broadcastAll({ type: "end", agentId, aborted: true });
+          broadcastAll({ type: "aborted", agentId });
         } else {
-          broadcastAll({ type: "error", agentId, error: error.message });
+          broadcastAll({ type: "error", agentId, code: "agent_failed", content: error.message });
         }
       }
       return;
