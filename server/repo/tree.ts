@@ -76,7 +76,10 @@ const isAllowedPath = (abs) => !!rootOf(abs);
 const isWorkspaceRoot = (abs) => rootOf(abs) === normalizeAbs(abs);
 const workspaceForPath = (abs) => workspaceRows().find((r) => r.path === normalizeAbs(abs)) || null;
 const parentAbsOf = (abs) => isWorkspaceRoot(abs) ? null : path.dirname(normalizeAbs(abs));
-const isHidden = (name) => name.startsWith(".");
+// 点开头不等于隐藏:.dev / .github / .gitignore 都是要看的(VS Code 同款语义)。
+// 真正藏起来的只有系统噪音文件;噪音目录走 IGNORE_DIRS(.git 在其中)。
+const IGNORE_FILES = new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
+const isHidden = (name) => IGNORE_FILES.has(name);
 let legacyAgentFilesMigrated = false;
 // 递归(智能体索引 / 删除子树)时跳过的重目录 —— 跟 VSCode 一样不索引它们,
 // 否则 AI 一 npm install,node_modules 几万文件会拖垮一切。
@@ -107,8 +110,11 @@ const migrateLegacyAgentFiles = (roots) => {
   for (const root of roots || []) walk(root);
   if (changed) invalidateIdx();
 };
-const sanitize = (title) =>
-  String(title || "").trim().replace(/[/\\]/g, "-").replace(/^\.+/, "") || "未命名";
+// 允许 .dev 这类点开头的名字;只挡路径分隔符和 "." / ".." 两个特殊目录名
+const sanitize = (title) => {
+  const t = String(title || "").trim().replace(/[/\\]/g, "-");
+  return (t === "." || t === ".." ? "" : t) || "未命名";
+};
 
 const dbNow = () => getDb().prepare("SELECT datetime('now') AS t").get().t;
 const statCreatedAt = (abs) => {
