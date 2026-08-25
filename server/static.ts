@@ -4,7 +4,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.resolve(__dirname, "../ui/dist");
+// ARBOR_HOME:桌面壳/打包产物用它锚定仓库根 —— 打包后 __dirname 不再是 server/
+const DIST = path.resolve(process.env.ARBOR_HOME || path.join(__dirname, ".."), "ui/dist");
 
 const MIME = {
   ".html": "text/html; charset=utf-8",

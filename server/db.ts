@@ -5,7 +5,9 @@ import { fileURLToPath } from "url";
 import { DatabaseSync } from "node:sqlite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, "../database/arbor.db");
+// ARBOR_HOME:桌面壳/打包产物用它锚定仓库根 —— 打包后 __dirname 不再是 server/
+const HOME = process.env.ARBOR_HOME || path.join(__dirname, "..");
+const DB_PATH = path.join(HOME, "database/arbor.db");
 
 let db;
 

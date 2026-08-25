@@ -64,12 +64,12 @@ export function SettingsPanel({ onSaved }: { onSaved?: (settings: Settings) => v
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl px-5 md:px-8">
           <div className="divide-y divide-border">
-            <Field label="API URL">
+            <Field label="Responses API URL">
               <input
                 className={inputClass}
                 value={form.apiUrl}
                 onChange={(e) => set("apiUrl", e.target.value)}
-                placeholder="https://api.openai.com/v1/chat/completions"
+                placeholder="https://api.openai.com/v1/responses"
               />
             </Field>
 
@@ -87,7 +87,7 @@ export function SettingsPanel({ onSaved }: { onSaved?: (settings: Settings) => v
                 className={inputClass}
                 value={form.model}
                 onChange={(e) => set("model", e.target.value)}
-                placeholder="gpt-4o / deepseek-chat / ..."
+                placeholder="填 Responses 兼容网关下的模型名"
               />
             </Field>
 

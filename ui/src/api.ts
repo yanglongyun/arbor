@@ -21,13 +21,25 @@ export type Node = {
 export type SearchMatch = { line: number; text: string };
 export type SearchResult = { id: string; title: string; matches: SearchMatch[] };
 
-export type Message = {
-  _id?: number;
-  role: string;
-  content?: string;
-  tool_calls?: any[];
-  tool_call_id?: string;
-  _meta?: Record<string, any>;
+/** 落库的 Responses item(body 解析后):user/system 消息、reasoning、message、function_call、function_call_output。 */
+export type StoredItem = {
+  type?: string;
+  role?: string;
+  content?: string | Array<{ type?: string; text?: string }> | null;
+  summary?: Array<{ text?: string }>;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+  output?: string;
+};
+
+/** 邮箱里的一行:一行一个 item。 */
+export type MessageRow = {
+  id: number;
+  item: StoredItem;
+  meta: Record<string, any> | null;
+  usage: Record<string, any> | null;
+  created_at: string;
 };
 
 export type Call = {
@@ -158,7 +170,9 @@ export const api = {
     request<{ ok: boolean; workspace: WorkspaceRoot | null }>(`/api/workspaces?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   listMessages: (agentId: string) =>
-    request<{ messages: Message[] }>(`/api/messages?agentId=${encodeURIComponent(agentId)}`),
+    request<{ rows: MessageRow[] }>(`/api/messages?agentId=${encodeURIComponent(agentId)}`),
+
+  listRuns: () => request<{ ids: string[] }>("/api/runs"),
 
   listCalls: (params: { callerId?: string; calleeId?: string; status?: string } = {}) => {
     const qs = new URLSearchParams();

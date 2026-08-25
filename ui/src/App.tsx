@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSocket } from "./ws";
 import { api, type GitRepositoryStatus, type Node } from "./api";
+import { EVENTS } from "../../server/shared/events";
 import { QuickOpen, CommandPalette, type Command } from "./components/command";
 import { NodeTree } from "./components/explorer";
 import { WorkspaceLayout, isSettingsTab, isActivityTab, isNodeTab, useTabGroups } from "./components/workspace";
@@ -77,7 +78,8 @@ export function App() {
       if (timer) return;
       timer = setTimeout(() => { timer = null; setTreeRefresh((n) => n + 1); }, 300);
     };
-    const triggers = ["tree_changed", "call_changed", "message"];
+    // 新消息进邮箱 / 轮次终局 → 未读点、状态点要跟上(流式增量不刷树,太密)
+    const triggers = ["tree_changed", "call_changed", EVENTS.INPUT, EVENTS.DONE, EVENTS.ABORTED, EVENTS.ERROR];
     const offs = triggers.map((t) => socket.on(t, bump));
     return () => { offs.forEach((f) => f()); if (timer) clearTimeout(timer); };
   }, [socket]);

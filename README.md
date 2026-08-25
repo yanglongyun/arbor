@@ -67,7 +67,8 @@ workspaces/
 
 前端是一套 VSCode 式的本地 GUI,常用的都顺手:
 
-- **流式输出**,逐字实时呈现,带光标;支持任意 OpenAI 兼容接口(OpenAI / DeepSeek / Kimi / Gemini…)
+- **流式输出**,思考与正文逐字实时呈现;完成的一轮自动收纳成「已工作 X 秒」折叠条,最终回复站在外面,过程(思考 / 工具 / 中间文本)点开细看
+- 模型协议是 **Responses**,不随供应商变 —— 接任何 Responses 兼容接口 / 网关,换供应商只换 URL
 - **多标签 + 左右分屏**;代码按扩展名高亮(CodeMirror);Markdown / HTML / 图片 / PDF 直接在标签内预览
 - **⌘P 快速打开 · ⌘⇧F 全局搜索 · ⌘⇧P 命令面板**
 - agent 运行时亮起**蓝点**、有未读则亮**绿点**,一眼看出谁在忙
@@ -89,6 +90,9 @@ npm run ui          # 前端,vite dev,端口 5174(代理到 9506)
 # 生产(构建 GUI,单端口运行)
 npm run build        # vite build → ui/dist
 npm start            # 后端 + GUI 同端口 http://localhost:9506
+
+# 桌面客户端(Electron 壳,自动挑端口拉起本地服务)
+npm run app
 ```
 
 开发模式打开 **http://localhost:5174/**:
@@ -99,23 +103,27 @@ npm start            # 后端 + GUI 同端口 http://localhost:9506
 
 ## 技术栈
 
-Node 22+ · TypeScript · `node:sqlite`(内置,零外部数据库依赖)· React 19 · Tailwind 4 · Vite · CodeMirror 6 · @dnd-kit · ws
+Node 22+ · TypeScript · `node:sqlite`(内置,零外部数据库依赖)· React 19 · Tailwind 4 · Vite · CodeMirror 6 · @dnd-kit · ws · Electron(桌面壳)
 
 ## 想读代码——架构
 
-分层清晰:**api(HTTP)→ service(业务)→ repo(数据)**,另有 `agent/`(无状态 LLM 执行器)。
+分层清晰:**ai(内核)→ tools / runs(编排)→ repo(数据)→ api / realtime(通道)**。
 
 ```
+ai/               🧠 无状态 AI 内核(Responses 协议,纯 JS 零依赖):模型 → 工具 → 模型的循环 / SSE 解析 / 一次性补全
 server/
-├── agent/        🧠 无状态 LLM 执行器(不依赖任何 server 状态)——chat() 循环 / 工具 schema 与实现 / 多 provider 流式
-├── service/      🎬 业务层——tree.ts(树操作 + 事件)/ agent.ts(拼 prompt、注入工作目录、回信、唤醒调用方)
-├── repo/         💾 纯数据访问——tree.ts(文件系统即树)/ messages / calls / settings / search
-├── api/          🌐 HTTP(很薄,只解析请求、拼响应,业务交给 service)
-└── realtime.ts   📡 WebSocket(send / stop / 广播)
-ui/src/components/   React 前端,按 UI 区域分模块:explorer(树)/ workspace(编辑器外壳 + panels)/ command / chat / files / settings / ui
+├── shared/       📜 事件名契约(conversation.*),服务端与界面共用一份,不写裸字符串
+├── tools/        🔧 11 个工具的定义与实现(全部必填 summary,一句话摘要给界面);外部能力经 ctx 注入
+├── runs/         🎬 运行编排——逐条落库 / 事件广播 / 压缩水位 / 停止收尾(悬空调用补输出 + [stopped] 留痕)/ 回信并唤醒调用方
+├── service/      🌳 tree.ts(树操作 + 事件)
+├── repo/         💾 纯数据访问——tree.ts(文件系统即树)/ messages(一行一个 Responses item)/ calls / settings / search
+├── api/          🌐 HTTP(很薄,只解析请求、拼响应)
+└── realtime.ts   📡 WebSocket(send 立即返回,事件按 agentId 认领;终端多路复用)
+desktop/          🖥 Electron 壳:esbuild 单文件 server 由壳拉起,窗口指向 127.0.0.1
+ui/src/components/   React 前端,按 UI 区域分模块:explorer(树)/ workspace(编辑器外壳 + panels)/ command / chat(按轮收纳的消息流)/ files / settings / ui
 ```
 
-`agent/` 不知道树是什么,只接收组装好的消息和 `ctx`(含工作目录 cwd)运行 LLM 循环;状态全在 `service` / `repo`。一万行出头,可以完整读完。
+`ai/` 不知道树是什么,只接收组装好的 items、工具表和执行映射跑循环;运行编排与状态全在 `server/`。消息**逐条落库**:每个 item(思考 / 正文 / 工具调用 / 结果)完成即入库,中途停止只丢正在流式的半句,切标签、刷新、开多窗口都不丢流。
 
 ## 几句实话
 

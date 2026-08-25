@@ -4,7 +4,8 @@ import fs from "fs";
 import nodePath from "path";
 import { execFile } from "child_process";
 import * as tree from "../service/tree.js";
-import { listMessages } from "../repo/messages.js";
+import { listRows } from "../repo/messages.js";
+import { runningIds } from "../runs/index.js";
 import { listCalls } from "../repo/calls.js";
 import { getSettings, saveSettings } from "../repo/settings.js";
 import {
@@ -169,7 +170,12 @@ const handleApi = async (req, res) => {
 
     // ---- messages(某个智能体的邮箱)----
     if (path === "/api/messages" && method === "GET") {
-      return json(res, 200, { ok: true, messages: listMessages(url.searchParams.get("agentId")) });
+      return json(res, 200, { ok: true, rows: listRows(url.searchParams.get("agentId")) });
+    }
+
+    // ---- 谁在跑(界面初始化对账;实时靠 conversation.* 事件)----
+    if (path === "/api/runs" && method === "GET") {
+      return json(res, 200, { ok: true, ids: runningIds() });
     }
 
     // ---- calls ----

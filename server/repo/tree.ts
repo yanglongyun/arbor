@@ -16,7 +16,9 @@ import { fileURLToPath } from "url";
 import { getDb } from "../db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(process.env.ARBOR_WORKSPACES || path.join(__dirname, "../../workspaces"));
+// ARBOR_HOME:桌面壳/打包产物用它锚定仓库根 —— 打包后 __dirname 不再是 server/repo/
+const HOME = process.env.ARBOR_HOME || path.join(__dirname, "../..");
+const ROOT = path.resolve(process.env.ARBOR_WORKSPACES || path.join(HOME, "workspaces"));
 const AGENT_EXT = ".agent.json";
 const LEGACY_AGENT_EXT = ".conv.json";
 const SEP = path.sep;
