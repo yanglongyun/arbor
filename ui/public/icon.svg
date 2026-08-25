@@ -1,0 +1,39 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Arbor 图标:对话 = 树上的节点。
+       纸白方圆底(Notion 纸感)· 墨色曲枝向上生长 · 顶端一枚蓝节点 = 活着的那段对话。 -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdfdfb"/>
+      <stop offset="1" stop-color="#f1f0ec"/>
+    </linearGradient>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="rgba(35,131,226,.20)"/>
+      <stop offset=".62" stop-color="rgba(35,131,226,.10)"/>
+      <stop offset="1" stop-color="rgba(35,131,226,0)"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 底:方圆(macOS 网格,内容 832,四边留 96) -->
+  <rect x="96" y="96" width="832" height="832" rx="188" fill="url(#paper)"/>
+  <rect x="97.5" y="97.5" width="829" height="829" rx="186.5" fill="none" stroke="rgba(55,53,47,.09)" stroke-width="3"/>
+
+  <!-- 地线:根须落定的地方 -->
+  <path d="M 412 802 H 612" stroke="rgba(58,56,47,.16)" stroke-width="24" stroke-linecap="round" fill="none"/>
+
+  <!-- 枝:从根节点圆心出发向上生长,节点盖住线头 -->
+  <g stroke="#3a382f" stroke-width="30" stroke-linecap="round" fill="none">
+    <path d="M 512 730 C 512 600 480 505 330 415"/>
+    <path d="M 512 730 C 512 600 544 505 694 415"/>
+    <path d="M 512 730 L 512 320"/>
+  </g>
+
+  <!-- 节点 -->
+  <circle cx="512" cy="730" r="48" fill="#3a382f"/>
+  <circle cx="330" cy="415" r="40" fill="#3a382f"/>
+  <circle cx="694" cy="415" r="40" fill="#3a382f"/>
+
+  <!-- 顶节点:活着的对话 -->
+  <circle cx="512" cy="320" r="112" fill="url(#halo)"/>
+  <circle cx="512" cy="320" r="58" fill="#2383e2"/>
+  <circle cx="496" cy="303" r="15" fill="rgba(255,255,255,.82)"/>
+</svg>

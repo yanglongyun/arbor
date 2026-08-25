@@ -10,10 +10,31 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SERVER_ENTRY = join(ROOT, "dist/server.mjs");
 
 let child = null;
 let quitting = false;
+
+/** 开发态:仓库就是家。打包态:代码在只读资源区,数据在 userData。 */
+const layout = () => {
+  if (!app.isPackaged) {
+    return {
+      nodeBin: "node",
+      serverEntry: join(ROOT, "dist/server.mjs"),
+      cwd: ROOT,
+      env: { ARBOR_HOME: ROOT },
+    };
+  }
+  const res = process.resourcesPath;
+  return {
+    nodeBin: join(res, "core/bin/node"),
+    serverEntry: join(res, "core/server.mjs"),
+    cwd: join(res, "core"), // node-pty 从 core/node_modules 解析
+    env: {
+      ARBOR_HOME: app.getPath("userData"), // database/ 与 workspaces/ 落在这里
+      ARBOR_UI_DIST: join(res, "core/ui"),
+    },
+  };
+};
 
 /** 找一个空闲端口;显式给了 ARBOR_PORT 就用它(比如想连已在跑的 dev 服务)。 */
 const pickPort = () => new Promise((resolve, reject) => {
@@ -27,12 +48,12 @@ const pickPort = () => new Promise((resolve, reject) => {
   });
 });
 
-/** GUI 场景(Finder 启动)PATH 很瘦,补上常见的 node 安装位置。 */
-const spawnEnv = (port) => ({
+/** GUI 场景(Finder 启动)PATH 很瘦,补上常见的 node 安装位置(开发态用 PATH 找 node)。 */
+const spawnEnv = (port, extra) => ({
   ...process.env,
   PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":"),
   ARBOR_PORT: String(port),
-  ARBOR_HOME: ROOT,
+  ...extra,
 });
 
 const waitHealthy = async (port, timeoutMs = 15000) => {
@@ -49,9 +70,10 @@ const waitHealthy = async (port, timeoutMs = 15000) => {
 };
 
 const startServer = async (port) => {
-  child = spawn("node", [SERVER_ENTRY], {
-    cwd: ROOT,
-    env: spawnEnv(port),
+  const { nodeBin, serverEntry, cwd, env } = layout();
+  child = spawn(nodeBin, [serverEntry], {
+    cwd,
+    env: spawnEnv(port, env),
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.setEncoding("utf8");

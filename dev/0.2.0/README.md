@@ -61,12 +61,24 @@ create_agent / call_agent 永不进分组 —— 多智能体动作是 Arbor 的
 agent 来信 / 子 agent 回信保留居中卡片;运行中扫光、粘底滚动、日期条、
 草稿按智能体持久化、markdown 净化升级到渲染器层(丢原始 HTML、中和危险协议)。
 
-### Electron 壳
+### Electron 壳与正式打包
 
-`npm run app`:esbuild 把 server 打成 `dist/server.mjs`(node-pty 外置),
-壳挑空闲端口用**系统 node** 拉起(避开 node-pty 对 Electron ABI 的重编译),
+`npm run app`(开发):esbuild 把 server 打成 `dist/server.mjs`(node-pty 外置),
+壳挑空闲端口用**系统 node** 拉起(node-pty 1.x 自带 N-API prebuilds,无 ABI 纠纷),
 健康检查通过后窗口指向 `127.0.0.1:<port>`,外部链接走系统浏览器,退出杀子进程。
-`ARBOR_HOME` 环境变量锚定仓库根(打包产物的 `__dirname` 不再是 server/)。
+
+`npm run dist:mac`(打包):electron-builder 出 `release/mac-arm64/Arbor.app`(~414MB)。
+- 图标:`desktop/icon.svg`(源)→ `scripts/make-icon.mjs`(sharp 栅格化 + iconutil)→ `icon.icns`;
+  同一 SVG 兼作前端 favicon(`ui/public/icon.svg`)。
+- 随包 node:`scripts/prepare-node.mjs` 复制系统 node 进 `build/node-runtime`,
+  打进 `Resources/core/bin/node`;server 单文件与 `ui/dist`、node-pty 一起进 `Resources/core/`。
+- 路径分离:打包态 `ARBOR_HOME` = `~/Library/Application Support/Arbor`(database + workspaces),
+  `ARBOR_UI_DIST` 指向只读资源区的前端;开发态两者同在仓库根,行为不变。
+- 签名:electron-builder 自动取钥匙串里的 Developer ID;未做公证(本机分发用不上)。
+
+已实测:打包版独立拉起 sidecar、health 通过、种子数据(settings / workspaces 树)完整可用。
+注意:workspaces 表存的是绝对路径,桌面 app 与 dev 指向同一片工作树(文件系统即真相);
+消息库(SQLite)则各自一份,两边的对话历史会分叉 —— 开发期可接受。
 
 ## 验证(2026-08-25,真实模型端到端)
 
@@ -77,7 +89,7 @@ agent 来信 / 子 agent 回信保留居中卡片;运行中扫光、粘底滚动
 
 ## 已知限制 / 下一步
 
-- 正式打包(electron-builder + 随包 node 或 electron-rebuild node-pty)未做,壳当前面向开发机;
+- 打包只出 mac-arm64 的 dir 目标(本机自用);dmg / 多平台 / 公证未做;
 - 运行中的智能体收到新邮箱消息(用户或别的 agent 发来)不会中途插入本轮,跑完后下一次运行才带上(与旧版一致);
 - 压缩只在两次运行之间发生,超长单轮可能顶到上下文墙(maxRounds=64 兜底);
 - /api/messages 全量返回,未分页。

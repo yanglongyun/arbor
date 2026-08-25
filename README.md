@@ -93,6 +93,9 @@ npm start            # 后端 + GUI 同端口 http://localhost:9506
 
 # 桌面客户端(Electron 壳,自动挑端口拉起本地服务)
 npm run app
+
+# 打成 macOS 应用(release/mac-arm64/Arbor.app,含图标与随包 node)
+npm run dist:mac
 ```
 
 开发模式打开 **http://localhost:5174/**:

@@ -6,6 +6,7 @@ node_modules/
 ui/dist/
 dist/
 build/
+release/
 *.tsbuildinfo
 
 # ─── 本地数据 ───
