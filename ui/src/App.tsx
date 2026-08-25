@@ -11,6 +11,7 @@ import type { ManagedProcess } from "./api";
 export function App() {
   const socket = useSocket();
   const [treeRefresh, setTreeRefresh] = useState(0);
+  const treeBumpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [desktopNavOpen, setDesktopNavOpen] = useState(true);
@@ -73,15 +74,16 @@ export function App() {
 
   // 树相关 WS 事件 → 刷新树/状态点(节流,流式时 message 事件很密)
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    // 节流定时器放 ref:effect 若因依赖变化重跑,cleanup 不会把「排队中的刷新」
+    // 一并清掉 —— 从前 timer 在 effect 闭包里,App 一重渲染事件就被静默吞没
     const bump = () => {
-      if (timer) return;
-      timer = setTimeout(() => { timer = null; setTreeRefresh((n) => n + 1); }, 300);
+      if (treeBumpTimer.current) return;
+      treeBumpTimer.current = setTimeout(() => { treeBumpTimer.current = null; setTreeRefresh((n) => n + 1); }, 300);
     };
     // 新消息进邮箱 / 轮次终局 → 未读点、状态点要跟上(流式增量不刷树,太密)
     const triggers = ["tree_changed", "call_changed", EVENTS.INPUT, EVENTS.DONE, EVENTS.ABORTED, EVENTS.ERROR];
     const offs = triggers.map((t) => socket.on(t, bump));
-    return () => { offs.forEach((f) => f()); if (timer) clearTimeout(timer); };
+    return () => { offs.forEach((f) => f()); };
   }, [socket]);
 
   // 标签与 WS 联动:重命名/删除时同步标签

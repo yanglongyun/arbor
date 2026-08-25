@@ -3,6 +3,7 @@ import http from "http";
 import { handleApi } from "./api/index.js";
 import { attachWs } from "./realtime.js";
 import { serve } from "./static.js";
+import { startWatcher } from "./watcher.js";
 
 const startServer = async (port = 9506) =>
   new Promise((resolve, reject) => {
@@ -15,6 +16,7 @@ const startServer = async (port = 9506) =>
     });
     attachWs(server);
     server.listen(port, "127.0.0.1", () => {
+      startWatcher(); // 工作区文件监听:磁盘上的任何变化 → 树自动刷新
       console.log(`Arbor running on http://127.0.0.1:${port}`);
       resolve(server);
     });

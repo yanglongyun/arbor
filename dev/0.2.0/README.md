@@ -87,6 +87,18 @@ agent 来信 / 子 agent 回信保留居中卡片;运行中扫光、粘底滚动
 - 打包版 server 独立跑通(health / runs / 静态 UI);Electron 壳自选端口拉起 sidecar 并开窗;
 - `npm run typecheck` 全绿。
 
+## 补记(同版本内继续)
+
+- **图标定稿为「双色」方案**:绿→蓝对角渐变(自然×智能)+ 白色有机树,从 7 个候选方向
+  (暗夜信号 / 品牌蓝 / 字标 A / 生长 / 星丛 / 环冠 / 双色)中人工选定。
+- **工作区文件监听**(server/watcher.ts):对每个工作区根挂 `fs.watch({recursive})`
+  (libuv 在 macOS 走 FSEvents,与 VS Code 同一内核机制,零依赖),事件节流 400ms 后广播
+  tree_changed —— Finder / 终端 / dev server / git 改磁盘,树自动刷新;IGNORE_DIRS 内的抖动不触发。
+- **修复前端事件竞态**:useSocket 从前每次渲染返回新对象,依赖它的 effect 每渲染重跑,
+  cleanup 把 300ms 节流中的定时器一并清掉 —— tree_changed 到了、handler 也注册着,刷新却被
+  静默吞没。修法:useSocket 返回值 useMemo 恒定 + 节流定时器入 ref + 卸载后不再拉起僵尸重连。
+  这也是「智能体改完文件树有时不动」的老病根,不只影响新监听器。
+
 ## 已知限制 / 下一步
 
 - 打包只出 mac-arm64 的 dir 目标(本机自用);dmg / 多平台 / 公证未做;

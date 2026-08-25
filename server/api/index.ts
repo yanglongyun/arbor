@@ -23,6 +23,7 @@ import {
 } from "../repo/git.js";
 import { getProcess, listProcesses, startProcess, stopProcess } from "../processes.js";
 import { pickDirectory } from "../directoryPicker.js";
+import { syncWatchers } from "../watcher.js";
 
 const parseBody = async (req) => {
   const chunks = [];
@@ -109,14 +110,18 @@ const handleApi = async (req, res) => {
       if (method === "POST") {
         const body = await parseBody(req);
         try {
-          return json(res, 201, { ok: true, item: tree.addWorkspace(body) });
+          const item = tree.addWorkspace(body);
+          syncWatchers(); // 新根挂上文件监听
+          return json(res, 201, { ok: true, item });
         } catch (error) {
           return json(res, 400, { ok: false, error: error.message });
         }
       }
       if (method === "DELETE") {
         try {
-          return json(res, 200, { ok: true, workspace: tree.removeWorkspace(url.searchParams.get("id")) });
+          const workspace = tree.removeWorkspace(url.searchParams.get("id"));
+          syncWatchers(); // 摘掉的根不再监听
+          return json(res, 200, { ok: true, workspace });
         } catch (error) {
           return json(res, 400, { ok: false, error: error.message });
         }
