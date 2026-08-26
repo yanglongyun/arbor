@@ -49,7 +49,17 @@ export type ActivityTab = {
   title: "活动";
 };
 
-export type WorkspaceTab = Node | ProcessTab | TerminalTab | GitTab | GitDiffTab | SettingsTab | ActivityTab;
+export const WEB_TAB_PREFIX = "__web__";
+
+/** 网页标签:Electron 壳里的 <webview>,常驻挂载(卸载 = 断网重载,登录态全丢)。 */
+export type WebTab = {
+  id: string;
+  kind: "web";
+  title: string;
+  url: string;
+};
+
+export type WorkspaceTab = Node | ProcessTab | TerminalTab | GitTab | GitDiffTab | SettingsTab | ActivityTab | WebTab;
 export type WorkspaceGroupId = "main" | "side";
 
 export type WorkspaceGroupState = {
@@ -101,6 +111,13 @@ export const activityTab = (): ActivityTab => ({
   title: "活动",
 });
 
+export const webTab = (url: string, title?: string): WebTab => ({
+  id: `${WEB_TAB_PREFIX}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+  kind: "web",
+  title: title || url.replace(/^https?:\/\//, "").replace(/\/$/, ""),
+  url,
+});
+
 export const isProcessTab = (tab: WorkspaceTab | null | undefined): tab is ProcessTab =>
   tab?.kind === "process";
 
@@ -119,8 +136,11 @@ export const isSettingsTab = (tab: WorkspaceTab | null | undefined): tab is Sett
 export const isActivityTab = (tab: WorkspaceTab | null | undefined): tab is ActivityTab =>
   tab?.kind === "activity";
 
+export const isWebTab = (tab: WorkspaceTab | null | undefined): tab is WebTab =>
+  tab?.kind === "web";
+
 export const isNodeTab = (tab: WorkspaceTab | null | undefined): tab is Node =>
-  !!tab && tab.kind !== "process" && tab.kind !== "terminal" && tab.kind !== "git" && tab.kind !== "git-diff" && tab.kind !== "settings" && tab.kind !== "activity";
+  !!tab && tab.kind !== "process" && tab.kind !== "terminal" && tab.kind !== "git" && tab.kind !== "git-diff" && tab.kind !== "settings" && tab.kind !== "activity" && tab.kind !== "web";
 
 export const isOpenableSpace = (node: Node | null | undefined): node is Node =>
   !!node && node.kind !== "space";

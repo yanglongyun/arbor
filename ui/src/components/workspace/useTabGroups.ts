@@ -10,6 +10,9 @@ import {
   settingsTab,
   activityTab,
   terminalTab,
+  webTab,
+  isWebTab,
+  type WebTab,
   type WorkspaceGroupId,
   type WorkspaceGroupState,
   type WorkspaceTab,
@@ -129,6 +132,24 @@ export function useTabGroups({ canCloseTab = () => true, onTabClosed = () => {} 
   const openActivity = useCallback((opts: { groupId?: WorkspaceGroupId; side?: boolean } = {}) => {
     openTab(activityTab(), opts);
   }, [openTab]);
+
+  const openWeb = useCallback((url: string, title?: string, opts: { groupId?: WorkspaceGroupId; side?: boolean } = {}) => {
+    openTab(webTab(url, title), opts);
+  }, [openTab]);
+
+  /** 网页标签的标题/地址跟着页面走(page-title-updated / did-navigate)。 */
+  const updateWebTab = useCallback((id: string, patch: Partial<Pick<WebTab, "title" | "url">>) => {
+    setGroups((prev) => {
+      const next = { ...prev };
+      for (const groupId of groupOrder) {
+        next[groupId] = {
+          ...next[groupId],
+          tabs: next[groupId].tabs.map((tab) => (tab.id === id && isWebTab(tab) ? { ...tab, ...patch } : tab)),
+        };
+      }
+      return next;
+    });
+  }, []);
 
   const activateTab = useCallback((groupId: WorkspaceGroupId, id: string) => {
     setGroups((prev) => ({ ...prev, [groupId]: { ...prev[groupId], activeId: id } }));
@@ -278,6 +299,8 @@ export function useTabGroups({ canCloseTab = () => true, onTabClosed = () => {} 
     openGitDiff,
     openSettings,
     openActivity,
+    openWeb,
+    updateWebTab,
     activateTab,
     reorderTabs,
     closeTabs,

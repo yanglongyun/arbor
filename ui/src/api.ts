@@ -23,6 +23,9 @@ export type Node = {
 export type SearchMatch = { line: number; text: string };
 export type SearchResult = { id: string; title: string; matches: SearchMatch[] };
 
+/** 侧栏「网站」页收藏的链接。 */
+export type Site = { id: string; title: string; url: string; created_at: string };
+
 /** 落库的 Responses item(body 解析后):user/system 消息、reasoning、message、function_call、function_call_output。 */
 export type StoredItem = {
   type?: string;
@@ -174,6 +177,15 @@ export const api = {
     request<{ ok: boolean }>(`/api/agents?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
   markAgentRead: (id: string) =>
     request<{ item: Node }>(`/api/agents/read?id=${encodeURIComponent(id)}`, { method: "POST" }).then(one),
+
+  // ── 网站收藏 ──
+  listSites: () => request<{ sites: Site[] }>("/api/sites"),
+  createSite: (opts: { url: string; title?: string }) =>
+    request<{ item: Site }>("/api/sites", { method: "POST", ...jsonBody(opts) }),
+  updateSite: (id: string, patch: { title?: string; url?: string }) =>
+    request<{ item: Site }>(`/api/sites?id=${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(patch) }),
+  deleteSite: (id: string) =>
+    request<{ ok: boolean }>(`/api/sites?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   listWorkspaces: () => request<{ workspaces: WorkspaceRoot[] }>("/api/workspaces"),
   pickWorkspaceDirectory: () => request<{ path: string | null }>("/api/workspaces/pick", { method: "POST" }),

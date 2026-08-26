@@ -5,6 +5,7 @@ import nodePath from "path";
 import { execFile } from "child_process";
 import * as tree from "../service/tree.js";
 import * as agents from "../service/agents.js";
+import * as sites from "../service/sites.js";
 import { listRows } from "../repo/messages.js";
 import { runningIds } from "../runs/index.js";
 import { listCalls } from "../repo/calls.js";
@@ -91,6 +92,24 @@ const handleApi = async (req, res) => {
     }
     if (path === "/api/agents/read" && method === "POST") {
       return json(res, 200, { ok: true, item: agents.markRead(url.searchParams.get("id")) });
+    }
+
+    // ---- sites(网站收藏)----
+    if (path === "/api/sites") {
+      if (method === "GET") return json(res, 200, { ok: true, sites: sites.list() });
+      if (method === "POST") {
+        const body = await parseBody(req);
+        try { return json(res, 201, { ok: true, item: sites.create(body) }); }
+        catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      if (method === "PATCH") {
+        const body = await parseBody(req);
+        try { return json(res, 200, { ok: true, item: sites.update(url.searchParams.get("id"), body) }); }
+        catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      if (method === "DELETE") {
+        return json(res, 200, { ok: true, deleted: sites.remove(url.searchParams.get("id")) });
+      }
     }
 
     // ---- tree(纯文件树:文件夹 / 文件)----

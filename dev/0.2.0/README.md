@@ -130,6 +130,17 @@ agent 来信 / 子 agent 回信保留居中卡片;运行中扫光、粘底滚动
 入口文案统一为「新建对话 / 在此新建对话」;自动取名与手动重命名经 agents_changed
 同步到侧栏与标签页(标签存的是快照,挂载时也对齐一次)。
 
+### 网页标签(Electron webview)
+
+侧栏加第三个 tab「网站」;标签页能开真实网页 —— Electron 壳里是 `<webview>`(真会话、真登录态),
+纯浏览器/dev 下退化成一块诚实的兜底(日常站点普遍禁 iframe,不硬塞)。要点:
+
+- `desktop/main.js` 开 `webviewTag`,并给 webview 装 window.open 处理(留在原地导航,不弹窗);
+- 网页标签在 WorkspaceGroup 里**常驻挂载、CSS 控显隐** —— `<webview>` 卸载 = 断网重载,登录态全丢;
+- `sites` 表存收藏(service/sites.ts,url 归一化 + http(s) 校验);网站 rail 点击即开标签,
+  顶部 + 与命令面板「打开网址…」也进同一入口;
+- WebPanel 自带地址栏 / 后退前进 / 刷新 / 复制 / 系统浏览器,标题与地址跟着 webview 事件走。
+
 ## 已知限制 / 下一步
 
 - 打包只出 mac-arm64 的 dir 目标(本机自用);dmg / 多平台 / 公证未做;

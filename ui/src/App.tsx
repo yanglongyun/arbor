@@ -5,7 +5,7 @@ import { EVENTS } from "../../server/shared/events";
 import { QuickOpen, CommandPalette, type Command } from "./components/command";
 import { NodeTree } from "./components/explorer";
 import { WorkspaceLayout, isSettingsTab, isActivityTab, isNodeTab, useTabGroups } from "./components/workspace";
-import { FileText, Folder, FolderPlus, Bot, Search, Settings as SettingsIcon, X, MonitorPlay, PanelRight, Radio } from "lucide-react";
+import { FileText, Folder, FolderPlus, Bot, Globe, Search, Settings as SettingsIcon, X, MonitorPlay, PanelRight, Radio } from "lucide-react";
 import type { ManagedProcess } from "./api";
 
 export function App() {
@@ -64,6 +64,7 @@ export function App() {
   };
   const openSettings = () => tabGroups.openSettings();
   const openActivity = () => tabGroups.openActivity();
+  const openWebTab = (url: string, title?: string) => tabGroups.openWeb(url, title);
   const openAgentById = (id: string) => api.getAgent(id).then((r) => r.node && openNode(r.node)).catch(() => {});
 
   const refreshGit = useCallback(() => setGitRefreshKey((n) => n + 1), []);
@@ -157,21 +158,6 @@ export function App() {
     return () => { cancelled = true; off(); };
   }, [socket, tabGroups.openProcess]);
 
-  // 刷新打开的智能体标签的状态点(运行中/未读)
-  useEffect(() => {
-    const agentTabs = allTabsRef.current.filter((t) => isNodeTab(t) && t.kind === "agent");
-    if (!agentTabs.length) return;
-    let cancelled = false;
-    Promise.all(agentTabs.map((t) => api.getNode(t.id).then((r) => r.node).catch(() => null)))
-      .then((items) => {
-        if (cancelled) return;
-        for (const item of items) {
-          if (item) tabGroups.updateNodeTab(item.id, item);
-        }
-      });
-    return () => { cancelled = true; };
-  }, [treeRefresh, tabGroups.updateNodeTab]);
-
   // 全局快捷键:⌘P 快开 / ⌘⇧P 命令面板
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -214,6 +200,10 @@ export function App() {
 
   const commands: Command[] = [
     { id: "new-agent", label: "新建对话", icon: <Bot size={14} />, run: () => createAtCurrentTarget("agent") },
+    { id: "open-url", label: "打开网址…", icon: <Globe size={14} />, run: () => {
+      const raw = window.prompt("要打开的网址:");
+      if (raw && raw.trim()) openWebTab(/^[a-z][a-z0-9+.-]*:/i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`);
+    } },
     { id: "new-space", label: "新建文件夹", icon: <Folder size={14} />, run: () => createAtCurrentTarget("space") },
     { id: "new-file", label: "新建文件", icon: <FileText size={14} />, run: () => createAtCurrentTarget("file") },
     { id: "add-workspace", label: "添加工作区", icon: <FolderPlus size={14} />, run: addWorkspace },
@@ -257,6 +247,7 @@ export function App() {
         selectedId={selectedNode?.id || activeNode?.id || ""}
         onSelect={openNode}
         socket={socket}
+        onOpenUrl={openWebTab}
         onOpenSide={(n) => openNode(n, { groupId: "side" })}
         onOpenTerminal={openTerminal}
         onOpenGit={openGit}
@@ -315,6 +306,7 @@ export function App() {
           onOpenSettings={openSettings}
           onGitChanged={refreshGit}
           onOpenGitDiff={(root, path, staged) => tabGroups.openGitDiff(root, path, staged)}
+          onUpdateWebTab={tabGroups.updateWebTab}
         />
       </div>
     </div>

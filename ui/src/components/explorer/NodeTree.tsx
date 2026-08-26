@@ -3,8 +3,9 @@ import type { GitRepositoryStatus, Node } from "../../api";
 import { api } from "../../api";
 import { NodeRow, InlineCreateRow, iconFor, colorFor, type TreeControls } from "./NodeRow";
 import { AgentRail } from "./AgentRail";
+import { SiteRail } from "./SiteRail";
 import { ContextMenu, type MenuItem } from "../ui";
-import { Settings, Folder, FolderPlus, FolderOpen, FileText, Bot, Trash2, Pencil, Plus, X, Copy, PanelRight, Terminal, GitBranch, Radio, MessageSquare, Files } from "lucide-react";
+import { Settings, Folder, FolderPlus, FolderOpen, FileText, Bot, Trash2, Pencil, Plus, X, Copy, PanelRight, Terminal, GitBranch, Radio, MessageSquare, Files, Globe } from "lucide-react";
 
 const REVEAL_LABEL = /Mac/i.test(navigator.platform) ? "在 Finder 中显示"
   : /Win/i.test(navigator.platform) ? "在资源管理器中显示" : "在文件管理器中显示";
@@ -16,6 +17,7 @@ export function NodeTree({
   selectedId,
   onSelect,
   socket,
+  onOpenUrl,
   onOpenSide,
   onOpenTerminal,
   onOpenGit,
@@ -33,6 +35,7 @@ export function NodeTree({
   selectedId: string;
   onSelect: (n: Node | null) => void;
   socket: { send: (m: any) => void; on: (t: string, fn: (p: any) => void) => () => void };
+  onOpenUrl: (url: string, title?: string) => void;
   onOpenSide?: (n: Node) => void;
   onOpenTerminal?: (n: Node, opts?: { command?: string; titlePrefix?: string }) => void;
   onOpenGit?: (repo: GitRepositoryStatus) => void;
@@ -48,15 +51,20 @@ export function NodeTree({
   onChanged?: () => void;
 }) {
   const [roots, setRoots] = useState<Node[]>([]);
-  // 顶部 tab:会话(智能体)| 文件(纯文件树)。VS Code 式切换,跨启动记住。
-  const [sideTab, setSideTab] = useState<"agents" | "files">(() =>
-    localStorage.getItem("arbor.sideTab") === "files" ? "files" : "agents");
-  const switchTab = (tab: "agents" | "files") => {
+  // 顶部 tab:会话 | 文件 | 网站。VS Code 式切换,跨启动记住。
+  type SideTab = "agents" | "files" | "sites";
+  const [sideTab, setSideTab] = useState<SideTab>(() => {
+    const saved = localStorage.getItem("arbor.sideTab");
+    return saved === "files" || saved === "sites" ? saved : "agents";
+  });
+  const switchTab = (tab: SideTab) => {
     setSideTab(tab);
     localStorage.setItem("arbor.sideTab", tab);
   };
   // 文件夹右键「在此新建对话」→ 切到会话 tab 并带上预设 workdir
   const [agentCreateReq, setAgentCreateReq] = useState<{ workdir?: string } | null>(null);
+  // 网站 tab 的「添加」请求(顶部 + 触发)
+  const [siteCreateReq, setSiteCreateReq] = useState(false);
   // 文件夹徽标:workdir → 绑定的智能体数
   const [agentDirs, setAgentDirs] = useState<Map<string, number>>(new Map());
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -362,10 +370,14 @@ export function NodeTree({
     if (mobileOpen) onCloseMobile?.();
   };
 
-  // 「新建」:会话 tab 直接新建对话;文件 tab 弹文件类菜单
+  // 「新建」:会话 tab 直接新建对话;网站 tab 拉起网址输入;文件 tab 弹文件类菜单
   const openNewMenu = (e: React.MouseEvent, parentId: string | null = currentCreateParentId()) => {
     if (sideTab === "agents") {
       setAgentCreateReq({});
+      return;
+    }
+    if (sideTab === "sites") {
+      setSiteCreateReq(true);
       return;
     }
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -418,9 +430,9 @@ export function NodeTree({
           )}
         </div>
 
-        {/* 顶部 tab:会话 | 文件(VS Code 式切换) */}
+        {/* 顶部 tab:会话 | 文件 | 网站(VS Code 式切换) */}
         <div className="flex border-b border-border">
-          {([["agents", "会话", MessageSquare], ["files", "文件", Files]] as const).map(([key, label, TabIcon]) => (
+          {([["agents", "会话", MessageSquare], ["files", "文件", Files], ["sites", "网站", Globe]] as const).map(([key, label, TabIcon]) => (
             <button
               key={key}
               onClick={() => switchTab(key)}
@@ -445,6 +457,13 @@ export function NodeTree({
             socket={socket}
             createReq={agentCreateReq}
             onCreateHandled={() => setAgentCreateReq(null)}
+          />
+        ) : sideTab === "sites" ? (
+          <SiteRail
+            refreshKey={refreshKey}
+            onOpenUrl={onOpenUrl}
+            createReq={siteCreateReq}
+            onCreateHandled={() => setSiteCreateReq(false)}
           />
         ) : (
         <RootDroppable highlight={overRoot} onContextMenu={onBlankContext}>

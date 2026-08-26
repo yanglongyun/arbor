@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { iconFor, colorFor } from "../explorer/NodeRow";
-import { X, Menu, Circle, GitBranch, GitCompare, MonitorPlay, PanelRight, Radio, Settings, Terminal } from "lucide-react";
+import { X, Menu, Circle, GitBranch, GitCompare, Globe, MonitorPlay, PanelRight, Radio, Settings, Terminal } from "lucide-react";
 import { ContextMenu, type MenuItem } from "../ui";
 import type { WorkspaceGroupId, WorkspaceTab } from "./types";
 
@@ -10,7 +10,8 @@ const tabIconFor = (tab: WorkspaceTab) =>
   tab.kind === "settings" ? Settings :
   tab.kind === "activity" ? Radio :
   tab.kind === "terminal" ? Terminal :
-  tab.kind === "process" ? MonitorPlay : iconFor(tab.kind, tab.title);
+  tab.kind === "process" ? MonitorPlay :
+  tab.kind === "web" ? Globe : iconFor(tab.kind, tab.title);
 
 const tabColorFor = (tab: WorkspaceTab) =>
   tab.kind === "git-diff" ? "text-accent" :
@@ -18,7 +19,8 @@ const tabColorFor = (tab: WorkspaceTab) =>
   tab.kind === "settings" ? "text-text-dim" :
   tab.kind === "activity" ? "text-accent" :
   tab.kind === "terminal" ? "text-success" :
-  tab.kind === "process" ? "text-accent" : colorFor(tab.kind);
+  tab.kind === "process" ? "text-accent" :
+  tab.kind === "web" ? "text-accent" : colorFor(tab.kind);
 
 type DropGuide = {
   marker: { x: number; y: number; height: number };

@@ -78,6 +78,14 @@ const initDb = () => {
       value TEXT NOT NULL
     );
 
+    -- 网站:侧栏「网站」页收藏的链接(网页标签在 Electron 壳的 <webview> 里打开)
+    CREATE TABLE IF NOT EXISTS sites (
+      id         TEXT PRIMARY KEY,
+      title      TEXT NOT NULL,
+      url        TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS workspaces (
       id             TEXT PRIMARY KEY,
       title          TEXT NOT NULL,

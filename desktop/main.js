@@ -104,6 +104,7 @@ const createWindow = (port) => {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true, // 网页标签:界面里的 <webview>,真会话真登录态
     },
   });
   // 外部链接去系统浏览器,别在壳里迷路
@@ -117,6 +118,15 @@ const createWindow = (port) => {
   win.loadURL(`http://127.0.0.1:${port}`);
   return win;
 };
+
+// 网页标签里的 window.open / target=_blank:留在原地导航,不许弹窗乱飞
+app.on("web-contents-created", (_event, contents) => {
+  if (contents.getType() !== "webview") return;
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) contents.loadURL(url);
+    return { action: "deny" };
+  });
+});
 
 app.whenReady().then(async () => {
   try {
