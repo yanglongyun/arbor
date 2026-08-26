@@ -1,12 +1,12 @@
 // @ts-nocheck
-// system prompt 拼装:身份 + 树上位置 + 工作目录 + 本文件夹的约定与技能 + 工具与协作规则。
-// 每次运行现拼,不落库 —— 位置、文档、技能都可能变。
-import { agentContext, agentDir, ancestry } from "../repo/tree.js";
+// system prompt 拼装:身份 + 工作目录 + 该文件夹的约定与技能 + 工具与协作规则。
+// 每次运行现拼,不落库 —— 目录、文档、技能都可能变。
+import { agentContext } from "../repo/tree.js";
+import { resolveWorkdir } from "../repo/agents.js";
 
 export const buildSystem = (agent, settings) => {
   const base = (agent.system && agent.system.trim()) || settings.system || "";
-  const path = ancestry(agent.id).map((node) => node.title).join(" / ");
-  const cwd = agentDir(agent.id);
+  const cwd = resolveWorkdir(agent);
   const ctx = agentContext(cwd);
   const docsBlock = ctx.docs.length
     ? "\n\n# 本文件夹的约定(你这个角色的规矩,优先遵守)\n" +
@@ -20,10 +20,9 @@ export const buildSystem = (agent, settings) => {
   return `${base}
 
 # 你是谁
-- 你是一棵「文件夹树」里的一个智能体(agent)。文件夹 = 目录,文件 = 真实文件,智能体 = <uuid>.agent.json。
-- 你所在的这个文件夹就是你的环境,也定义了你的角色 —— 工作目录、同级的约定(AGENTS.md)、同级的技能(skills)都只属于这里,不从别处继承。
+- 你是一个绑定在真实文件夹上的智能体(agent):文件夹 = 目录,文件 = 真实文件;你自己是一段会话,不是目录里的文件。
+- 你绑定的这个文件夹就是你的环境,也定义了你的角色 —— 工作目录、该目录的约定(AGENTS.md)、该目录的技能(skills)都只属于这里,不从别处继承。
 - agent id: ${agent.id}
-- 你在树里的位置:${path}
 - 你的工作目录(shell 在这里执行,东西都建在这里):
   ${cwd}${docsBlock}${skillsBlock}
 

@@ -1,15 +1,13 @@
 // @ts-nocheck
-// 文件系统即树。app 托管根目录 workspaces/(不导入任何已有目录,自己长出来):
-//   目录            = 空间(space)         —— 唯一会无限自嵌套的容器
-//   真实文件        = 文件(file)         —— 内容就是文件内容
-//   <uuid>.agent.json = 智能体(agent) —— 元数据:title / system / last_read_at / created_at
+// 文件系统即树 —— 而且**只有**文件系统的东西:
+//   目录     = 空间(space)—— 唯一会无限自嵌套的容器
+//   真实文件 = 文件(file)—— 内容就是文件内容
 //
-// id 规则:
-//   space / file  = 绝对路径(改名/移动即变,前端每次重拉树,无需 fs↔DB 同步)
-//   agent         = 文件名里的 uuid(稳定)—— messages / calls / call_agent 都按它寻址
-// SQLite 只存运行时状态(messages / calls / settings)。
+// 智能体不在这棵树上:对话是过程,不是用户的资产,住 SQLite(repo/agents.ts),
+// 只通过 workdir 绑定到某个目录。目录改名/移动/删除时,这里负责把绑定跟着搬家。
+// id 规则:space / file = 绝对路径(改名/移动即变,前端重拉,无需 fs↔DB 同步)。
 
-import { createHash, randomUUID } from "crypto";
+import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -19,8 +17,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ARBOR_HOME:桌面壳/打包产物用它锚定仓库根 —— 打包后 __dirname 不再是 server/repo/
 const HOME = process.env.ARBOR_HOME || path.join(__dirname, "../..");
 const ROOT = path.resolve(process.env.ARBOR_WORKSPACES || path.join(HOME, "workspaces"));
-const AGENT_EXT = ".agent.json";
-const LEGACY_AGENT_EXT = ".conv.json";
 const SEP = path.sep;
 
 const ensureRoot = () => { fs.mkdirSync(ROOT, { recursive: true }); return ROOT; };
@@ -59,10 +55,6 @@ const workspaceRows = () => {
       try { return fs.statSync(r.path).isDirectory(); }
       catch { return false; }
     });
-  if (!legacyAgentFilesMigrated) {
-    migrateLegacyAgentFiles(enabledRows.map((r) => r.path));
-    legacyAgentFilesMigrated = true;
-  }
   return enabledRows;
 };
 const workspacePaths = () => workspaceRows().map((r) => r.path);
@@ -80,75 +72,37 @@ const parentAbsOf = (abs) => isWorkspaceRoot(abs) ? null : path.dirname(normaliz
 // 真正藏起来的只有系统噪音文件;噪音目录走 IGNORE_DIRS(.git 在其中)。
 const IGNORE_FILES = new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
 const isHidden = (name) => IGNORE_FILES.has(name);
-let legacyAgentFilesMigrated = false;
-// 递归(智能体索引 / 删除子树)时跳过的重目录 —— 跟 VSCode 一样不索引它们,
+// 递归(搜索 / 删除子树)时跳过的重目录 —— 跟 VSCode 一样不索引它们,
 // 否则 AI 一 npm install,node_modules 几万文件会拖垮一切。
 const IGNORE_DIRS = new Set([
   "node_modules", "dist", "build", "out", "target", "vendor",
   ".git", ".next", ".cache", ".turbo", ".gradle", ".venv", "__pycache__",
 ]);
-const isAgentFile = (name) => name.endsWith(AGENT_EXT) || name.endsWith(LEGACY_AGENT_EXT);
-const agentIdOfFile = (name) =>
-  name.endsWith(AGENT_EXT)
-    ? name.slice(0, -AGENT_EXT.length)
-    : name.slice(0, -LEGACY_AGENT_EXT.length);
-const migrateLegacyAgentFiles = (roots) => {
-  let changed = false;
-  const walk = (dir) => {
-    let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (isHidden(e.name)) continue;
-      const abs = path.join(dir, e.name);
-      if (e.isDirectory()) { if (!IGNORE_DIRS.has(e.name)) walk(abs); continue; }
-      if (!e.name.endsWith(LEGACY_AGENT_EXT)) continue;
-      const next = path.join(dir, `${agentIdOfFile(e.name)}${AGENT_EXT}`);
-      if (fs.existsSync(next)) continue;
-      fs.renameSync(abs, next);
-      changed = true;
-    }
-  };
-  for (const root of roots || []) walk(root);
-  if (changed) invalidateIdx();
-};
 // 允许 .dev 这类点开头的名字;只挡路径分隔符和 "." / ".." 两个特殊目录名
 const sanitize = (title) => {
   const t = String(title || "").trim().replace(/[/\\]/g, "-");
   return (t === "." || t === ".." ? "" : t) || "未命名";
 };
 
-const dbNow = () => getDb().prepare("SELECT datetime('now') AS t").get().t;
 const statCreatedAt = (abs) => {
   try { const s = fs.statSync(abs); return new Date(s.birthtimeMs || s.mtimeMs).toISOString(); }
   catch { return null; }
 };
 
-// ── agent uuid → 绝对路径 索引(避免每次全树扫描)──
-let _idx = null, _idxAt = 0;
-const invalidateIdx = () => { _idx = null; };
-const buildIdx = () => {
-  const map = {};
-  const stack = workspacePaths();
-  while (stack.length) {
-    const dir = stack.pop();
-    let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      if (isHidden(e.name)) continue;
-      const abs = path.join(dir, e.name);
-      if (e.isDirectory()) { if (!IGNORE_DIRS.has(e.name)) stack.push(abs); }
-      else if (isAgentFile(e.name)) map[agentIdOfFile(e.name)] = abs;
-    }
-  }
-  return map;
+// ── 目录变动时给智能体搬家:workdir 是路径数据,路径变了数据要跟上 ──
+// 改名/移动 = 前缀替换;删除 = 塌缩到父目录(家没了,但对话不能跟着蒸发)。
+const reprefixAgents = (oldDir, newDir) => {
+  const from = withSep(normalizeAbs(oldDir));
+  const db = getDb();
+  db.prepare("UPDATE agents SET workdir = ? WHERE workdir = ?").run(normalizeAbs(newDir), normalizeAbs(oldDir));
+  db.prepare("UPDATE agents SET workdir = ? || substr(workdir, ?) WHERE substr(workdir, 1, ?) = ?")
+    .run(withSep(normalizeAbs(newDir)), from.length + 1, from.length, from);
 };
-const findAgentFile = (uuid) => {
-  const now = Date.now();
-  if (!_idx || now - _idxAt > 3000) { _idx = buildIdx(); _idxAt = now; }
-  const abs = _idx[uuid];
-  if (abs && !fs.existsSync(abs)) { _idx = buildIdx(); _idxAt = now; return _idx[uuid] || null; }
-  return abs || null;
+const collapseAgents = (dir, target) => {
+  const from = withSep(normalizeAbs(dir));
+  getDb().prepare("UPDATE agents SET workdir = ? WHERE workdir = ? OR substr(workdir, 1, ?) = ?")
+    .run(normalizeAbs(target), normalizeAbs(dir), from.length, from);
 };
-
-const readAgentMeta = (abs) => { try { return JSON.parse(fs.readFileSync(abs, "utf8")) || {}; } catch { return {}; } };
 
 // ── 构造统一 item ──
 const spaceItem = (abs) => {
@@ -158,15 +112,6 @@ const spaceItem = (abs) => {
     id: full, parent_id: parentAbsOf(full), kind: "space",
     title: ws?.title || path.basename(full), system: null, content: null, position: null, last_read_at: null, created_at: null,
     workspace: !!ws,
-  };
-};
-const agentItem = (abs) => {
-  const m = readAgentMeta(abs);
-  return {
-    id: m.id || agentIdOfFile(path.basename(abs)),
-    parent_id: parentAbsOf(abs), kind: "agent",
-    title: m.title || "新智能体", system: m.system ?? null, content: null, position: null,
-    last_read_at: m.last_read_at ?? null, created_at: m.created_at || null,
   };
 };
 const MAX_TEXT = 2_000_000;
@@ -192,7 +137,7 @@ const resolveFileAbs = (id) => {
   return hit && hit.kind === "file" ? hit.abs : null;
 };
 
-// 任意节点 → 磁盘绝对路径(文件夹=目录,文件=文件,智能体=.agent.json)。仅工作区内有效。
+// 任意节点 → 磁盘绝对路径(文件夹=目录,文件=文件)。仅工作区内有效。
 const pathForId = (id) => { const hit = locate(id); return hit ? hit.abs : null; };
 
 // SKILL.md → { name, description }:优先 frontmatter,回退到首个标题 / 首行
@@ -249,7 +194,6 @@ const listAll = () => {
       if (isHidden(e.name)) continue;
       const abs = path.join(dir, e.name);
       if (e.isDirectory()) { if (!IGNORE_DIRS.has(e.name)) { out.push(spaceItem(abs)); walk(abs); } }
-      else if (isAgentFile(e.name)) out.push(agentItem(abs));
       else out.push(fileItem(abs));
     }
   };
@@ -264,33 +208,17 @@ const listAll = () => {
 const locate = (id) => {
   if (id == null || id === "") return null;
   const sid = String(id);
-  if (isPathId(sid)) {
-    const abs = normalizeAbs(sid);
-    if (!isAllowedPath(abs)) return null;
-    let st; try { st = fs.statSync(abs); } catch { return null; }
-    return { kind: st.isDirectory() ? "space" : "file", abs };
-  }
-  const abs = findAgentFile(sid);
-  return abs ? { kind: "agent", abs } : null;
+  if (!isPathId(sid)) return null; // 非路径 id(如智能体 uuid)不归这棵树管
+  const abs = normalizeAbs(sid);
+  if (!isAllowedPath(abs)) return null;
+  let st; try { st = fs.statSync(abs); } catch { return null; }
+  return { kind: st.isDirectory() ? "space" : "file", abs };
 };
 
-// 取某 id 对应的「目录」:space=自身;agent/file=其所在目录
-const dirOf = (id) => {
-  const hit = locate(id);
-  if (!hit) return workspacePaths()[0] || ensureRoot();
-  return hit.kind === "space" ? hit.abs : path.dirname(hit.abs);
-};
-const agentDir = (id) => dirOf(id); // agent 的 shell 工作目录
 const terminalCwd = (id) => {
   if (!id) return workspacePaths()[0] || ensureRoot();
   const hit = locate(id);
   if (hit) return hit.kind === "space" ? hit.abs : path.dirname(hit.abs);
-  if (isPathId(String(id))) {
-    const abs = normalizeAbs(id);
-    if (!isAllowedPath(abs)) throw new Error(`path outside workspaces: ${abs}`);
-    const st = fs.statSync(abs);
-    return st.isDirectory() ? abs : path.dirname(abs);
-  }
   return workspacePaths()[0] || ensureRoot();
 };
 
@@ -314,15 +242,13 @@ const listChildren = (parentId) => {
     if (isHidden(e.name)) continue;
     const abs = path.join(dirAbs, e.name);
     if (e.isDirectory()) out.push(spaceItem(abs));
-    else if (isAgentFile(e.name)) out.push(agentItem(abs));
     else out.push(fileItem(abs));
   }
-  // 排序:智能体最前 → 和 AI 相关的上下文(AGENTS.md / CLAUDE.md / skills 目录)→ 其它文件夹 → 其它文件
+  // 排序:和 AI 相关的上下文(AGENTS.md / CLAUDE.md / skills 目录)→ 其它文件夹 → 其它文件
   const isContextItem = (n) =>
     (n.kind === "space" && n.title === "skills") ||
     (n.kind === "file" && (n.title === "AGENTS.md" || n.title === "CLAUDE.md"));
-  const rank = (n) =>
-    n.kind === "agent" ? 0 : isContextItem(n) ? 1 : n.kind === "space" ? 2 : 3;
+  const rank = (n) => (isContextItem(n) ? 1 : n.kind === "space" ? 2 : 3);
   out.sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
   out.forEach((n, i) => { n.position = i + 1; });
   return out;
@@ -332,7 +258,6 @@ const getItem = (id) => {
   const hit = locate(id);
   if (!hit) return null;
   if (hit.kind === "space") return spaceItem(hit.abs);
-  if (hit.kind === "agent") return agentItem(hit.abs);
   return fileItem(hit.abs, true);
 };
 
@@ -344,13 +269,6 @@ const createItem = ({ kind, parentId = null, title, system = null, content = nul
     parentDir = hit.abs;
   } else parentDir = workspacePaths()[0] || ensureRoot();
 
-  if (kind === "agent") {
-    const id = randomUUID();
-    const abs = path.join(parentDir, `${id}${AGENT_EXT}`);
-    fs.writeFileSync(abs, JSON.stringify({ id, title: String(title || "新智能体").trim() || "新智能体", system: system ? String(system) : null, last_read_at: null, created_at: dbNow() }, null, 2));
-    invalidateIdx();
-    return agentItem(abs);
-  }
   if (kind === "space") {
     const abs = path.join(parentDir, sanitize(title));
     fs.mkdirSync(abs, { recursive: true });
@@ -375,13 +293,6 @@ const updateItem = (id, { title, system, content } = {}) => {
     return spaceItem(hit.abs);
   }
 
-  if (hit.kind === "agent") {
-    const m = readAgentMeta(hit.abs);
-    if (title !== undefined) m.title = String(title || "").trim() || m.title || "新智能体";
-    if (system !== undefined) m.system = system == null ? null : String(system);
-    fs.writeFileSync(hit.abs, JSON.stringify(m, null, 2));
-    return agentItem(hit.abs);
-  }
   if (hit.kind === "file") {
     let abs = hit.abs;
     if (content !== undefined) fs.writeFileSync(abs, content == null ? "" : String(content));
@@ -391,45 +302,24 @@ const updateItem = (id, { title, system, content } = {}) => {
     }
     return fileItem(abs, true);
   }
-  // space:改名 = 目录改名
+  // space:改名 = 目录改名;住在子树上的智能体跟着搬家
   let abs = hit.abs;
   if (title !== undefined) {
     const next = path.join(path.dirname(abs), sanitize(title));
-    if (next !== abs) { fs.renameSync(abs, next); abs = next; invalidateIdx(); }
+    if (next !== abs) { fs.renameSync(abs, next); reprefixAgents(abs, next); abs = next; }
   }
   return spaceItem(abs);
-};
-
-// 清掉某智能体在 SQLite 里的消息/调用残留
-const purgeAgent = (uuid) => {
-  const db = getDb();
-  db.prepare("DELETE FROM messages WHERE agent_id = ?").run(String(uuid));
-  db.prepare("DELETE FROM calls WHERE caller_id = ? OR callee_id = ?").run(String(uuid), String(uuid));
 };
 
 const deleteItem = (id) => {
   const hit = locate(id);
   if (!hit) return;
-  if (hit.kind === "agent") {
-    fs.rmSync(hit.abs, { force: true });
-    purgeAgent(agentIdOfFile(path.basename(hit.abs)));
-    invalidateIdx();
-    return;
-  }
   if (hit.kind === "file") { fs.rmSync(hit.abs, { force: true }); return; }
   if (isWorkspaceRoot(hit.abs)) throw new Error("工作区根不能删除,请从 Arbor 移除工作区");
-  // space:先清掉子树里所有智能体的 SQLite 残留,再整目录删
-  const stack = [hit.abs];
-  while (stack.length) {
-    const dir = stack.pop();
-    let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      if (e.isDirectory()) { if (!isHidden(e.name) && !IGNORE_DIRS.has(e.name)) stack.push(path.join(dir, e.name)); }
-      else if (isAgentFile(e.name)) purgeAgent(agentIdOfFile(e.name));
-    }
-  }
+  // space:整目录删;绑在这棵子树上的智能体**不陪葬**——对话不是目录的附属品,
+  // 它们的 workdir 塌缩到父目录,会话照常留在会话列表里
   fs.rmSync(hit.abs, { recursive: true, force: true });
-  invalidateIdx();
+  collapseAgents(hit.abs, path.dirname(hit.abs));
 };
 
 // 移到某空间下(newParentId 必须是空间或 null=根)。position 忽略(按名排序)。
@@ -448,10 +338,11 @@ const moveItem = (id, newParentId, _position = undefined) => {
     if (targetDir === hit.abs || targetDir.startsWith(withSep(hit.abs))) throw new Error("不能把文件夹移进自己的子孙");
   }
   const next = path.join(targetDir, path.basename(hit.abs));
-  if (next !== hit.abs) fs.renameSync(hit.abs, next);
-  invalidateIdx();
+  if (next !== hit.abs) {
+    fs.renameSync(hit.abs, next);
+    if (hit.kind === "space") reprefixAgents(hit.abs, next); // 子树上的智能体跟着搬家
+  }
   if (hit.kind === "space") return spaceItem(next);
-  if (hit.kind === "agent") return agentItem(next);
   return fileItem(next, true);
 };
 
@@ -466,39 +357,6 @@ const ancestry = (id) => {
   }
   return chain;
 };
-
-// 标记智能体已读
-const markRead = (id) => {
-  const hit = locate(id);
-  if (!hit || hit.kind !== "agent") return getItem(id);
-  const m = readAgentMeta(hit.abs);
-  m.last_read_at = dbNow();
-  fs.writeFileSync(hit.abs, JSON.stringify(m, null, 2));
-  return agentItem(hit.abs);
-};
-
-// 一组智能体 id → {id -> unread}(有比 last_read_at 更新的消息)
-const unreadMap = (ids) => {
-  if (!ids?.length) return {};
-  const db = getDb();
-  const ph = ids.map(() => "?").join(",");
-  const rows = db.prepare(`SELECT agent_id, MAX(created_at) AS m FROM messages WHERE agent_id IN (${ph}) GROUP BY agent_id`).all(...ids.map(String));
-  const latest = {};
-  for (const r of rows) latest[r.agent_id] = r.m;
-  const map = {};
-  for (const id of ids) {
-    const abs = findAgentFile(String(id));
-    const lr = abs ? (readAgentMeta(abs).last_read_at || null) : null;
-    const m = latest[String(id)] || null;
-    map[id] = !!(m && (!lr || m > lr));
-  }
-  return map;
-};
-
-// agent.ts / functions.ts 用的别名
-const getAgent = (id) => { const it = getItem(id); return it && it.kind === "agent" ? it : null; };
-const createAgent = ({ spaceId = null, title, system = null } = {}) =>
-  createItem({ kind: "agent", parentId: spaceId, title, system });
 
 const addWorkspace = ({ path: rawPath, title } = {}) => {
   if (!String(rawPath || "").trim()) throw new Error("path is required");
@@ -515,8 +373,6 @@ const addWorkspace = ({ path: rawPath, title } = {}) => {
       enabled = 1,
       last_opened_at = datetime('now')
   `).run(id, name, abs);
-  migrateLegacyAgentFiles([abs]);
-  invalidateIdx();
   return spaceItem(abs);
 };
 
@@ -527,15 +383,14 @@ const removeWorkspace = (idOrPath) => {
   if (!row) return null;
   if (rows.length <= 1) throw new Error("至少保留一个工作区");
   getDb().prepare("UPDATE workspaces SET enabled = 0 WHERE id = ?").run(row.id);
-  invalidateIdx();
   return row;
 };
 
 const listWorkspaces = () => workspaceRows();
 
 export {
-  ROOT, ensureRoot, IGNORE_DIRS,
+  ROOT, ensureRoot, IGNORE_DIRS, isAllowedPath,
   listChildren, listAll, getItem, createItem, updateItem, deleteItem, moveItem, ancestry,
-  markRead, unreadMap, agentDir, getAgent, createAgent, resolveFileAbs, pathForId, agentContext,
+  resolveFileAbs, pathForId, agentContext,
   listWorkspaces, addWorkspace, removeWorkspace, isWorkspaceRoot, terminalCwd,
 };

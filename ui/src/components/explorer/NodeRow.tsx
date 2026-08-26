@@ -27,6 +27,8 @@ export type TreeControls = {
   activeId: string | null;
   overNodeId: string | null;
   dropPos: DropPosition | null;
+  /** 文件夹徽标:workdir → 绑定的智能体数(「谁住在这」的可见性,污染归零后的替代) */
+  agentDirs: Map<string, number>;
 };
 
 // 按扩展名挑文件图标(VSCode 风)
@@ -122,6 +124,7 @@ export function NodeRow({
 
       <div
         ref={setRef}
+        data-nid={node.id}
         {...(dragDisabled ? {} : attributes)}
         {...(dragDisabled ? {} : listeners)}
         role={dragDisabled ? "button" : undefined}
@@ -171,7 +174,14 @@ export function NodeRow({
           <span className="flex-1 min-w-0 truncate text-[14.5px]">{node.title}</span>
         )}
 
-        {node.kind === "agent" && <AgentStatusDot status={node.status} unread={node.unread} />}
+        {isContainer && (controls.agentDirs.get(node.id) || 0) > 0 && (
+          <span
+            className="shrink-0 inline-flex items-center gap-0.5 text-[11px] text-warning/80"
+            title={`${controls.agentDirs.get(node.id)} 个智能体绑定此目录`}
+          >
+            <Bot size={11} />{controls.agentDirs.get(node.id)}
+          </span>
+        )}
 
         {/* 更多操作:桌面 hover / 移动端常驻。快速点弹菜单,不与按住拖拽冲突 */}
         <button
@@ -221,13 +231,6 @@ export function NodeRow({
       )}
     </div>
   );
-}
-
-function AgentStatusDot({ status, unread }: { status?: string; unread?: boolean }) {
-  if (status === "error") return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-danger" />;
-  if (status === "running") return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-accent animate-pulse" />;
-  if (unread) return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-success" title="未读" />;
-  return null;
 }
 
 export function InlineCreateRow({ depth, controls }: { depth: number; controls: TreeControls }) {

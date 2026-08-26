@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitRepositoryStatus, Node } from "../../api";
 import { api } from "../../api";
 import { NodeRow, InlineCreateRow, iconFor, colorFor, type TreeControls } from "./NodeRow";
+import { AgentRail } from "./AgentRail";
 import { ContextMenu, type MenuItem } from "../ui";
-import { Settings, Folder, FolderPlus, FolderOpen, FileText, Bot, Trash2, Pencil, Plus, X, Copy, PanelRight, Terminal, GitBranch, Radio } from "lucide-react";
+import { Settings, Folder, FolderPlus, FolderOpen, FileText, Bot, Trash2, Pencil, Plus, X, Copy, PanelRight, Terminal, GitBranch, Radio, MessageSquare, Files } from "lucide-react";
 
 const REVEAL_LABEL = /Mac/i.test(navigator.platform) ? "在 Finder 中显示"
   : /Win/i.test(navigator.platform) ? "在资源管理器中显示" : "在文件管理器中显示";
@@ -14,6 +15,7 @@ import { AddWorkspaceDialog } from "./AddWorkspaceDialog";
 export function NodeTree({
   selectedId,
   onSelect,
+  socket,
   onOpenSide,
   onOpenTerminal,
   onOpenGit,
@@ -30,6 +32,7 @@ export function NodeTree({
 }: {
   selectedId: string;
   onSelect: (n: Node | null) => void;
+  socket: { send: (m: any) => void; on: (t: string, fn: (p: any) => void) => () => void };
   onOpenSide?: (n: Node) => void;
   onOpenTerminal?: (n: Node, opts?: { command?: string; titlePrefix?: string }) => void;
   onOpenGit?: (repo: GitRepositoryStatus) => void;
@@ -45,6 +48,17 @@ export function NodeTree({
   onChanged?: () => void;
 }) {
   const [roots, setRoots] = useState<Node[]>([]);
+  // 顶部 tab:会话(智能体)| 文件(纯文件树)。VS Code 式切换,跨启动记住。
+  const [sideTab, setSideTab] = useState<"agents" | "files">(() =>
+    localStorage.getItem("arbor.sideTab") === "files" ? "files" : "agents");
+  const switchTab = (tab: "agents" | "files") => {
+    setSideTab(tab);
+    localStorage.setItem("arbor.sideTab", tab);
+  };
+  // 文件夹右键「在此新建智能体」→ 切到会话 tab 并带上预设 workdir
+  const [agentCreateReq, setAgentCreateReq] = useState<{ workdir?: string } | null>(null);
+  // 文件夹徽标:workdir → 绑定的智能体数
+  const [agentDirs, setAgentDirs] = useState<Map<string, number>>(new Map());
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(localStorage.getItem("arbor.sidebarWidth") || "");
     return Number.isFinite(saved) && saved >= 220 && saved <= 420 ? saved : 260;
@@ -65,7 +79,7 @@ export function NodeTree({
 
   // 创建
   const [creatingUnder, setCreatingUnder] = useState<string | null>(null);
-  const [creatingKind, setCreatingKind] = useState<Node["kind"]>("space");
+  const [creatingKind, setCreatingKind] = useState<"space" | "file">("space");
   const [draftTitle, setDraftTitle] = useState("");
 
   // 重命名
@@ -87,6 +101,49 @@ export function NodeTree({
   const { sensors, activeNode, overInfo, overRoot, dndHandlers } = useTreeDnd({ refresh, setExpanded });
 
   useEffect(() => { load(); }, [load, refreshKey]);
+
+  // 文件夹徽标数据(会话 tab 有自己的列表,这里只为树上的角标)
+  useEffect(() => {
+    api.listAgents().then((r) => {
+      const map = new Map<string, number>();
+      for (const a of r.agents) {
+        if (!a.workdir) continue;
+        map.set(a.workdir, (map.get(a.workdir) || 0) + 1);
+      }
+      setAgentDirs(map);
+    }).catch(() => {});
+  }, [refreshKey]);
+
+  // 聊天面板的工作目录芯片 → 跳到文件 tab 并展开定位那个目录
+  useEffect(() => {
+    const onReveal = (e: Event) => {
+      const abs = String((e as CustomEvent).detail?.path || "");
+      if (!abs) return;
+      switchTab("files");
+      const root = roots.map((r) => r.id).filter((r) => abs === r || abs.startsWith(r + "/")).sort((a, b) => b.length - a.length)[0];
+      if (!root) return;
+      // 展开根到目标的每一级
+      setExpandedIds((current) => {
+        const next = new Set(current);
+        let cursor = root;
+        next.add(root);
+        const rest = abs.slice(root.length).split("/").filter(Boolean);
+        for (const seg of rest) { cursor = `${cursor}/${seg}`; next.add(cursor); }
+        return next;
+      });
+      // 各级子行是懒加载的,轮询等目标行出现再滚过去
+      let tries = 0;
+      const timer = setInterval(() => {
+        tries += 1;
+        const el = document.querySelector(`[data-nid="${CSS.escape(abs)}"]`);
+        if (el) { el.scrollIntoView({ block: "center" }); clearInterval(timer); }
+        else if (tries > 12) clearInterval(timer);
+      }, 120);
+    };
+    window.addEventListener("arbor:reveal-path", onReveal);
+    return () => window.removeEventListener("arbor:reveal-path", onReveal);
+  }, [roots]);
+
   useEffect(() => {
     const nextIds = roots.filter((root) => root.workspace && !autoExpandedWorkspaces.current.has(root.id)).map((root) => root.id);
     if (!nextIds.length) return;
@@ -125,7 +182,7 @@ export function NodeTree({
   };
 
   // ── 创建 ──
-  const startCreate = (parentId: string | null, kind: Node["kind"]) => {
+  const startCreate = (parentId: string | null, kind: "space" | "file") => {
     setCreatingUnder(parentId === null ? "" : parentId);
     setCreatingKind(kind);
     setDraftTitle("");
@@ -215,8 +272,8 @@ export function NodeTree({
     }
     if (node.kind === "space") {
       items.push(
-        { label: "新建智能体", icon: <Bot size={13} className="text-warning" />,
-          onClick: () => startCreate(node.id, "agent") },
+        { label: "在此新建智能体", icon: <Bot size={13} className="text-warning" />,
+          onClick: () => { switchTab("agents"); setAgentCreateReq({ workdir: node.id }); } },
         "divider",
         { label: "新建文件夹", icon: <Folder size={13} className="text-accent" />,
           onClick: () => startCreate(node.id, "space") },
@@ -225,9 +282,7 @@ export function NodeTree({
         "divider",
       );
     }
-    // 智能体:复制稳定 uuid(给 call_agent 用);空间/文件:复制相对 workspaces 的干净路径
-    const isConv = node.kind === "agent";
-    const copyText = isConv ? node.id : node.id.replace(/^.*\/workspaces\//, "");
+    const copyText = node.id.replace(/^.*\/workspaces\//, "");
     if (node.kind !== "space" && onOpenSide) {
       items.push(
         { label: "打开到侧边", icon: <PanelRight size={13} />, onClick: () => onOpenSide(node) },
@@ -236,7 +291,7 @@ export function NodeTree({
     }
     items.push(
       { label: "重命名", icon: <Pencil size={13} />, onClick: () => startRename(node) },
-      { label: isConv ? "复制 ID" : "复制路径", icon: <Copy size={13} />,
+      { label: "复制路径", icon: <Copy size={13} />,
         onClick: async () => {
           try { await navigator.clipboard.writeText(copyText); }
           catch {
@@ -307,14 +362,16 @@ export function NodeTree({
     if (mobileOpen) onCloseMobile?.();
   };
 
-  // 「新建」下拉:智能体 / 空间 / 文件(锚在按钮下方,复用 ContextMenu)
+  // 「新建」:会话 tab 直接拉起新建智能体;文件 tab 弹文件类菜单
   const openNewMenu = (e: React.MouseEvent, parentId: string | null = currentCreateParentId()) => {
+    if (sideTab === "agents") {
+      setAgentCreateReq({});
+      return;
+    }
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setMenu({
       x: r.left, y: r.bottom + 4,
       items: [
-        { label: "新建智能体", icon: <Bot size={13} className="text-warning" />, onClick: () => startCreate(parentId, "agent") },
-        "divider",
         { label: "新建文件夹", icon: <Folder size={13} className="text-accent" />, onClick: () => startCreate(parentId, "space") },
         { label: "新建文件", icon: <FileText size={13} className="text-text-faint" />, onClick: () => startCreate(parentId, "file") },
         "divider",
@@ -328,6 +385,7 @@ export function NodeTree({
     creatingUnder, creatingKind, draftTitle, setDraftTitle, commitCreate, cancelCreate,
     renamingId, renameDraft, setRenameDraft, commitRename, cancelRename,
     activeId: activeNode?.id || null, overNodeId: overInfo?.nodeId || null, dropPos: overInfo?.pos || null,
+    agentDirs,
   };
   return (
     <DndContext sensors={sensors} {...dndHandlers}>
@@ -360,6 +418,35 @@ export function NodeTree({
           )}
         </div>
 
+        {/* 顶部 tab:会话 | 文件(VS Code 式切换) */}
+        <div className="flex border-b border-border">
+          {([["agents", "会话", MessageSquare], ["files", "文件", Files]] as const).map(([key, label, TabIcon]) => (
+            <button
+              key={key}
+              onClick={() => switchTab(key)}
+              className={[
+                "flex-1 flex items-center justify-center gap-1.5 h-9 text-[13px] transition-colors border-b-2 -mb-px",
+                sideTab === key
+                  ? "border-accent text-text font-medium"
+                  : "border-transparent text-text-dim hover:text-text hover:bg-bg-hover",
+              ].join(" ")}
+            >
+              <TabIcon size={13} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {sideTab === "agents" ? (
+          <AgentRail
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            refreshKey={refreshKey}
+            socket={socket}
+            createReq={agentCreateReq}
+            onCreateHandled={() => setAgentCreateReq(null)}
+          />
+        ) : (
         <RootDroppable highlight={overRoot} onContextMenu={onBlankContext}>
           {creatingUnder === "" && <InlineCreateRow depth={0} controls={controls} />}
 
@@ -379,17 +466,18 @@ export function NodeTree({
             <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
               <div className="text-3xl opacity-80">🌱</div>
               <div className="text-[13px] text-text-faint leading-relaxed">
-                还空着。<br />新建一个智能体或文件夹开始生长。
+                还空着。<br />新建一个文件夹开始生长。
               </div>
               <button
-                onClick={() => startCreate(null, "agent")}
+                onClick={() => startCreate(null, "space")}
                 className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-[13px] hover:opacity-90 transition-opacity"
               >
-                <Bot size={13} /> 新建智能体
+                <Folder size={13} /> 新建文件夹
               </button>
             </div>
           )}
         </RootDroppable>
+        )}
 
         {/* footer */}
         <div className="border-t border-border px-1.5 py-1.5 flex items-center gap-1">

@@ -4,6 +4,7 @@ import fs from "fs";
 import nodePath from "path";
 import { execFile } from "child_process";
 import * as tree from "../service/tree.js";
+import * as agents from "../service/agents.js";
 import { listRows } from "../repo/messages.js";
 import { runningIds } from "../runs/index.js";
 import { listCalls } from "../repo/calls.js";
@@ -64,7 +65,35 @@ const handleApi = async (req, res) => {
   try {
     if (path === "/health") return json(res, 200, { ok: true });
 
-    // ---- tree(统一树:文件夹 / 智能体 / 文件)----
+    // ---- agents(会话列表:智能体不在树上,住 SQLite,绑定 workdir)----
+    if (path === "/api/agents") {
+      if (method === "GET") return json(res, 200, { ok: true, agents: agents.list() });
+      if (method === "POST") {
+        const body = await parseBody(req);
+        try { return json(res, 201, { ok: true, item: agents.create(body) }); }
+        catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      if (method === "PATCH") {
+        const body = await parseBody(req);
+        try { return json(res, 200, { ok: true, item: agents.update(url.searchParams.get("id"), body) }); }
+        catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      if (method === "DELETE") {
+        const id = url.searchParams.get("id");
+        if (!id) return json(res, 400, { ok: false, error: "id is required" });
+        return json(res, 200, { ok: true, deleted: agents.remove(id) });
+      }
+    }
+    if (path === "/api/agents/get" && method === "GET") {
+      const item = agents.get(url.searchParams.get("id"));
+      if (!item) return json(res, 404, { ok: false, error: "not found" });
+      return json(res, 200, { ok: true, item });
+    }
+    if (path === "/api/agents/read" && method === "POST") {
+      return json(res, 200, { ok: true, item: agents.markRead(url.searchParams.get("id")) });
+    }
+
+    // ---- tree(纯文件树:文件夹 / 文件)----
     if (path === "/api/tree") {
       if (method === "GET") {
         return json(res, 200, { ok: true, items: tree.listChildren(url.searchParams.get("parentId")) });
@@ -140,9 +169,6 @@ const handleApi = async (req, res) => {
     }
 
     // 标记智能体已读
-    if (path === "/api/tree/read" && method === "POST") {
-      return json(res, 200, { ok: true, item: tree.markRead(url.searchParams.get("id")) });
-    }
 
     // 全局内容搜索(⌘⇧F):grep 真实文件
     if (path === "/api/search" && method === "GET") {
@@ -188,7 +214,7 @@ const handleApi = async (req, res) => {
       const callerId = url.searchParams.get("callerId") || undefined;
       const calleeId = url.searchParams.get("calleeId") || undefined;
       const status = url.searchParams.get("status") || undefined;
-      const titleOf = (id) => { if (!id) return null; try { const it = tree.getItem(id); return it ? it.title : null; } catch { return null; } };
+      const titleOf = (id) => { if (!id) return null; try { return agents.get(id)?.title ?? null; } catch { return null; } };
       const calls = listCalls({ callerId, calleeId, status }).map((c) => ({
         ...c, callerTitle: titleOf(c.caller_id), calleeTitle: titleOf(c.callee_id),
       }));
@@ -282,7 +308,9 @@ const handleApi = async (req, res) => {
 
     // 在系统文件管理器里显示该节点(macOS Finder / Windows 资源管理器 / Linux 文件管理器)
     if (path === "/api/reveal" && method === "POST") {
-      const abs = tree.pathForId(url.searchParams.get("id"));
+      const id = url.searchParams.get("id");
+      // 智能体 = 打开它的工作目录;文件/文件夹 = 其自身路径
+      const abs = agents.get(id)?.workdir || tree.pathForId(id);
       if (!abs) return json(res, 404, { ok: false, error: "not found" });
       const plt = process.platform;
       let cmd, args;

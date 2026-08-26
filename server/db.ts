@@ -24,6 +24,20 @@ const initDb = () => {
     -- SQLite 只存运行时状态:消息流、调用关系、设置。
     --   agent_id / caller_id / callee_id = 智能体的 uuid
 
+    -- 智能体:对话即智能体,绑定(而不是住在)一个真实文件夹。
+    --   从前是 <uuid>.agent.json 落在用户目录里 —— 过程数据污染用户资产,已废弃;
+    --   workdir 是它的家:shell 在这执行,AGENTS.md / skills 从这发现。
+    CREATE TABLE IF NOT EXISTS agents (
+      id           TEXT PRIMARY KEY,
+      title        TEXT NOT NULL,
+      system       TEXT,
+      workdir      TEXT NOT NULL,
+      pinned       INTEGER NOT NULL DEFAULT 0,
+      last_read_at TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- 消息:每个智能体的邮箱
     CREATE TABLE IF NOT EXISTS messages (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,

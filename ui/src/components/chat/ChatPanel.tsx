@@ -2,7 +2,7 @@
 // 行数组是可变结构(流式原地改行,tick 触发重渲染),事件按 agentId 认领 ——
 // 同一面板体系下,几个智能体各开各的标签互不干扰,切走的运行在服务端继续转。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Settings, Square } from "lucide-react";
+import { Folder, Send, Settings, Square } from "lucide-react";
 
 import type { Node } from "../../api";
 import { api } from "../../api";
@@ -43,6 +43,14 @@ export function ChatPanel({
       .then((r) => { const s = r.settings || ({} as any); setConfigured(!!(s.model && s.apiUrl)); })
       .catch(() => {});
   }, [node.id]);
+
+  // 工作目录芯片:标签页恢复的 node 可能没带 workdir,补拉一次
+  const [workdir, setWorkdir] = useState(node.workdir || "");
+  useEffect(() => {
+    setWorkdir(node.workdir || "");
+    if (!node.workdir) api.getAgent(node.id).then((r) => setWorkdir(r.node.workdir || "")).catch(() => {});
+  }, [node.id]);
+  const shortWorkdir = workdir.replace(/^\/Users\/[^/]+/, "~");
 
   const refresh = useCallback(async () => {
     const result = await api.listMessages(node.id).catch(() => null);
@@ -86,7 +94,7 @@ export function ChatPanel({
     void refresh().then(() => setViewSeq((n) => n + 1));
     // busy 以服务端为准对一次账(node.status 可能是十秒前的)
     void api.listRuns().then((r) => setBusy((r.ids || []).includes(node.id))).catch(() => {});
-    api.markNodeRead(node.id).catch(() => {});
+    api.markAgentRead(node.id).catch(() => {});
     return () => { streamRef.current = null; };
   }, [node.id]);
 
@@ -95,7 +103,7 @@ export function ChatPanel({
     const names = Object.values(EVENTS) as string[];
     const offs = names.map((name) => socket.on(name, (payload: any) => {
       streamRef.current?.onEvent(payload);
-      if (name === EVENTS.INPUT && payload.agentId === node.id) api.markNodeRead(node.id).catch(() => {});
+      if (name === EVENTS.INPUT && payload.agentId === node.id) api.markAgentRead(node.id).catch(() => {});
     }));
     return () => { offs.forEach((off) => off()); };
   }, [node.id, socket]);
@@ -125,6 +133,19 @@ export function ChatPanel({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-bg">
+      {/* 工作目录芯片:这段对话住在哪个文件夹;点击去文件树里定位它 */}
+      {workdir && (
+        <div className="shrink-0 flex items-center px-4 md:px-8 py-1.5 border-b border-border bg-bg-raised/60">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("arbor:reveal-path", { detail: { path: workdir } }))}
+            title={`工作目录:${workdir}\n点击在文件树中定位`}
+            className="inline-flex items-center gap-1.5 max-w-full px-2 py-0.5 rounded text-[12px] text-text-dim hover:text-text hover:bg-bg-hover transition-colors"
+          >
+            <Folder size={12} className="shrink-0 text-accent" />
+            <span className="truncate font-mono">{shortWorkdir}</span>
+          </button>
+        </div>
+      )}
       <MessageStream rows={rowsRef.current} busy={busy} tick={tick} viewSeq={viewSeq} />
 
       {/* 输入区 — 固定底部 */}

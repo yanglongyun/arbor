@@ -9,6 +9,7 @@ import { setBroadcaster } from "./bus.js";
 import { EVENTS } from "./shared/events.js";
 import { runAgent, stopAgent } from "./runs/index.js";
 import { appendItem } from "./repo/messages.js";
+import { touchAgent } from "./repo/agents.js";
 import { emit } from "./bus.js";
 import { resizeTerminal, startTerminal, stopAllTerminals, stopTerminal, writeTerminal } from "./terminals.js";
 
@@ -53,6 +54,7 @@ const handleConnection = (ws) => {
       const prompt = String(payload.prompt || "").trim();
       if (prompt) {
         const row = appendItem(agentId, { role: "user", content: prompt }, { meta: { kind: "message" } });
+        touchAgent(agentId); // 浮到最近组顶部
         emit({ type: EVENTS.INPUT, agentId, row });
       }
       // 立即返回;终局事件(done/aborted/error)由 runs 层广播。

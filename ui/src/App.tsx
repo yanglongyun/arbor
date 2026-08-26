@@ -64,7 +64,7 @@ export function App() {
   };
   const openSettings = () => tabGroups.openSettings();
   const openActivity = () => tabGroups.openActivity();
-  const openAgentById = (id: string) => api.getNode(id).then((r) => r.node && openNode(r.node)).catch(() => {});
+  const openAgentById = (id: string) => api.getAgent(id).then((r) => r.node && openNode(r.node)).catch(() => {});
 
   const refreshGit = useCallback(() => setGitRefreshKey((n) => n + 1), []);
   const openGit = (repo: GitRepositoryStatus) => {
@@ -80,11 +80,28 @@ export function App() {
       if (treeBumpTimer.current) return;
       treeBumpTimer.current = setTimeout(() => { treeBumpTimer.current = null; setTreeRefresh((n) => n + 1); }, 300);
     };
-    // 新消息进邮箱 / 轮次终局 → 未读点、状态点要跟上(流式增量不刷树,太密)
-    const triggers = ["tree_changed", "call_changed", EVENTS.INPUT, EVENTS.DONE, EVENTS.ABORTED, EVENTS.ERROR];
+    // 新消息进邮箱 / 轮次终局 / 会话列表变了 → 未读点、状态点要跟上(流式增量不刷,太密)
+    const triggers = ["tree_changed", "agents_changed", "call_changed", EVENTS.INPUT, EVENTS.DONE, EVENTS.ABORTED, EVENTS.ERROR];
     const offs = triggers.map((t) => socket.on(t, bump));
     return () => { offs.forEach((f) => f()); };
   }, [socket]);
+
+  // 智能体标签页上的状态点/未读点:跟着运行事件走(智能体已不在树上,不再有 tree_changed 带来更新)
+  useEffect(() => {
+    const set = (id: string, patch: Partial<Node>) => tabGroups.updateNodeTab(String(id), patch as Node);
+    const offs = [
+      socket.on(EVENTS.START, (p: any) => set(p.agentId, { status: "running" })),
+      socket.on(EVENTS.DONE, (p: any) => set(p.agentId, { status: "idle" })),
+      socket.on(EVENTS.ABORTED, (p: any) => set(p.agentId, { status: "idle" })),
+      socket.on(EVENTS.ERROR, (p: any) => set(p.agentId, { status: "error" })),
+      socket.on(EVENTS.INPUT, (p: any) => {
+        const active = tabGroups.activeTab;
+        if (active && isNodeTab(active) && active.id === p.agentId) return; // 正看着呢,不算未读
+        set(p.agentId, { unread: true });
+      }),
+    ];
+    return () => { offs.forEach((f) => f()); };
+  }, [socket, tabGroups.updateNodeTab, tabGroups.activeTab]);
 
   // 标签与 WS 联动:重命名/删除时同步标签
   useEffect(() => {
@@ -163,12 +180,14 @@ export function App() {
   }, []);
 
   // 在当前选中工作区/文件夹里新建(命令面板用,名字走 prompt)
-  const createAtCurrentTarget = async (kind: Node["kind"]) => {
+  const createAtCurrentTarget = async (kind: "space" | "agent" | "file") => {
     const title = window.prompt(`新建${kind === "space" ? "文件夹" : kind === "agent" ? "智能体" : "文件"}的名字:`);
     if (!title || !title.trim()) return;
     try {
       const parentId = currentCreateParentId() || undefined;
-      const r = await api.createNode({ kind, title: title.trim(), parentId });
+      const r = kind === "agent"
+        ? await api.createAgent({ title: title.trim(), workdir: parentId })
+        : await api.createNode({ kind, title: title.trim(), parentId });
       openNode(r.node);
       setTreeRefresh((n) => n + 1);
     } catch (e: any) {
@@ -226,6 +245,7 @@ export function App() {
       <NodeTree
         selectedId={selectedNode?.id || activeNode?.id || ""}
         onSelect={openNode}
+        socket={socket}
         onOpenSide={(n) => openNode(n, { groupId: "side" })}
         onOpenTerminal={openTerminal}
         onOpenGit={openGit}
@@ -264,7 +284,10 @@ export function App() {
           pendingGoto={pendingGoto}
           gitRefreshKey={gitRefreshKey}
           onFocusGroup={tabGroups.focusGroup}
-          onActivateTab={tabGroups.activateTab}
+          onActivateTab={(groupId, tabId) => {
+            tabGroups.activateTab(groupId, tabId);
+            tabGroups.updateNodeTab(tabId, { unread: false } as Node); // 点开即已读
+          }}
           onCloseTab={tabGroups.closeTab}
           onReorderTabs={tabGroups.reorderTabs}
           onMoveTabFromGroup={tabGroups.moveTab}

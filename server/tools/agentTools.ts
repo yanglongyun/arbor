@@ -23,12 +23,13 @@ export const createAgentDef = {
 };
 
 export const create_agent = ({ title, message, system }, ctx) => {
+  // 新智能体和自己同一个家(workdir)—— 「在你所在文件夹里派生」的语义不变
   const created = ctx.createAgent({
-    spaceId: ctx.spaceIdOf(ctx.selfAgentId),
     title: String(title || "new agent"),
     system: system ? String(system) : null,
+    workdir: ctx.cwd,
   });
-  ctx.emit({ type: "tree_changed", item: created, reason: "created" });
+  ctx.emit({ type: "agents_changed" });
 
   if (message != null && String(message).trim()) {
     const row = ctx.appendItem(
@@ -36,6 +37,7 @@ export const create_agent = ({ title, message, system }, ctx) => {
       { role: "user", content: String(message) },
       { meta: { kind: "call", source: "call", from: ctx.selfAgentId } },
     );
+    ctx.touchAgent(created.id);
     ctx.emit({ type: EVENTS.INPUT, agentId: created.id, row });
     ctx.runAgent(created.id, { callerId: ctx.selfAgentId }).catch((e) =>
       console.error("[create_agent] wake failed:", e?.message),
@@ -73,6 +75,7 @@ export const call_agent = ({ agent_id, message }, ctx) => {
     { role: "user", content: String(message || "") },
     { meta: { kind: "call", source: "call", from: ctx.selfAgentId } },
   );
+  ctx.touchAgent(targetId);
   ctx.emit({ type: EVENTS.INPUT, agentId: targetId, row });
   ctx.runAgent(targetId, { callerId: ctx.selfAgentId }).catch((e) =>
     console.error("[call_agent] wake failed:", e?.message),

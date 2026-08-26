@@ -1,41 +1,25 @@
 // @ts-nocheck
-// 树服务:repo 之上的业务层 —— 负责事件广播(tree_changed)+ 给智能体富化运行状态/未读,
-// 并把 update+move 这类组合操作收拢。API 只管 HTTP,业务都在这。
+// 树服务:repo 之上的业务层 —— 负责事件广播(tree_changed)+ 把 update+move 收拢。
+// 树上只有文件夹和文件;智能体在 service/agents.ts。
 import * as repo from "../repo/tree.js";
-import { latestCallStatusMap } from "../repo/calls.js";
+import * as agents from "../repo/agents.js";
 import { searchContent } from "../repo/search.js";
 import { emit } from "../bus.js";
 
-// 给智能体(agent)附加运行状态点 + 未读
-const enrich = (items) => {
-  const agentIds = items.filter((n) => n.kind === "agent").map((n) => n.id);
-  if (!agentIds.length) return items;
-  const statusMap = latestCallStatusMap(agentIds);
-  const unread = repo.unreadMap(agentIds);
-  return items.map((n) =>
-    n.kind === "agent"
-      ? { ...n, status: statusMap[n.id] || "idle", unread: !!unread[n.id] }
-      : n,
-  );
-};
+const listChildren = (parentId) => repo.listChildren(parentId || null);
+const listAll = () => repo.listAll();
+const getItem = (id) => repo.getItem(id);
 
-const listChildren = (parentId) => enrich(repo.listChildren(parentId || null));
-const listAll = () => enrich(repo.listAll());
-const getItem = (id) => {
-  const it = repo.getItem(id);
-  return it ? enrich([it])[0] : null;
-};
-
-const create = ({ kind, parentId = null, title = "", system = null, content = null } = {}) => {
-  const item = repo.createItem({ kind: kind || "space", parentId: parentId || null, title, system, content });
+const create = ({ kind, parentId = null, title = "", content = null } = {}) => {
+  const item = repo.createItem({ kind: kind || "space", parentId: parentId || null, title, content });
   emit({ type: "tree_changed", item, reason: "created" });
   return item;
 };
 
-// 改名/改内容/改人格 + 移动(都可选),最后返回富化后的最新项
-const update = (id, { title, system, content, parentId, position } = {}) => {
-  if (title !== undefined || system !== undefined || content !== undefined) {
-    repo.updateItem(id, { title, system, content });
+// 改名/改内容 + 移动(都可选),最后返回最新项
+const update = (id, { title, content, parentId, position } = {}) => {
+  if (title !== undefined || content !== undefined) {
+    repo.updateItem(id, { title, content });
   }
   if (parentId !== undefined || position !== undefined) {
     const cur = repo.getItem(id);
@@ -50,6 +34,7 @@ const update = (id, { title, system, content, parentId, position } = {}) => {
 const remove = (id) => {
   repo.deleteItem(id);
   emit({ type: "tree_changed", id, reason: "deleted" });
+  emit({ type: "agents_changed" }); // 子树上的智能体可能被塌缩搬家
 };
 
 const listWorkspaces = () => repo.listWorkspaces();
@@ -66,15 +51,16 @@ const removeWorkspace = (id) => {
   return workspace;
 };
 
-const markRead = (id) => {
-  repo.markRead(id);
-  return getItem(id);
-};
-
 const ancestry = (id) => repo.ancestry(id);
 const search = (q) => (q ? searchContent(q) : []);
 const fileRawAbs = (id) => repo.resolveFileAbs(id);
 const pathForId = (id) => repo.pathForId(id);
-const terminalCwd = (id) => repo.terminalCwd(id);
 
-export { enrich, listChildren, listAll, getItem, create, update, remove, markRead, ancestry, search, fileRawAbs, pathForId, listWorkspaces, addWorkspace, removeWorkspace, terminalCwd };
+/** 终端的 cwd:id 可能是智能体 uuid(在它的工作目录开终端)或路径 id。 */
+const terminalCwd = (id) => {
+  const agent = agents.getAgent(id);
+  if (agent) return agents.resolveWorkdir(agent);
+  return repo.terminalCwd(id);
+};
+
+export { listChildren, listAll, getItem, create, update, remove, ancestry, search, fileRawAbs, pathForId, listWorkspaces, addWorkspace, removeWorkspace, terminalCwd };

@@ -12,7 +12,7 @@ import { EVENTS } from "../shared/events.js";
 import { buildExecutors, tools } from "../tools/index.js";
 import { buildSystem } from "./system.js";
 import { maybeCompact } from "./compact.js";
-import { agentDir, createAgent, getAgent } from "../repo/tree.js";
+import { createAgent, getAgent, resolveWorkdir, touchAgent } from "../repo/agents.js";
 import { appendItem, listRows } from "../repo/messages.js";
 import { getLatestCompaction } from "../repo/compactions.js";
 import { createCall, markCallDone, markCallError, markCallRunning } from "../repo/calls.js";
@@ -21,9 +21,6 @@ import { emit } from "../bus.js";
 
 const MAX_ROUNDS = 64;
 const ERROR_MAX_CHARS = 4000;
-
-// 一个智能体所在的文件夹 id(create_agent 据此把新智能体建在同一文件夹)
-const spaceIdOf = (agentId) => getAgent(agentId)?.parent_id || null;
 
 // ── 智能体级运行注册:stop 对任意 agentId 都生效 ──
 const running = new Map();
@@ -86,6 +83,7 @@ const runAgent = async (agentId, { callerId = null } = {}) => {
       { role: "user", content: `[CALL_RESULT from "${agent.title}" (call#${callId})]\n${text}` },
       { meta: { kind: "call_result", source: "call_result", from: agentId, call_id: callId } },
     );
+    touchAgent(callerId); // 邮箱有动静,浮到最近组顶部
     emit({ type: EVENTS.INPUT, agentId: callerId, row });
     runAgent(callerId, {}).catch((error) => {
       if (!/already running/i.test(error?.message || "")) {
@@ -100,7 +98,7 @@ const runAgent = async (agentId, { callerId = null } = {}) => {
     const latest = getLatestCompaction(agentId);
     const rows = listRows(agentId, { afterId: Number(latest?.end_message_id || 0) });
     const input = rows.map((row) => row.item);
-    const cwd = agentDir(agentId);
+    const cwd = resolveWorkdir(agent);
 
     const ctx = {
       selfAgentId: agentId,
@@ -109,7 +107,7 @@ const runAgent = async (agentId, { callerId = null } = {}) => {
       appendItem,
       getAgent,
       createAgent,
-      spaceIdOf,
+      touchAgent,
       runAgent,
       toolResultMaxChars: Number(settings.toolResultMaxChars) || 12000,
     };
