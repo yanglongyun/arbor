@@ -4,12 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// ARBOR_UI_DIST:打包 app 里前端在只读资源区,与数据根(ARBOR_HOME)分离;
-// 开发态两者同在仓库根,不传即可。
-const DIST = path.resolve(
-  process.env.ARBOR_UI_DIST
-  || path.join(process.env.ARBOR_HOME || path.join(__dirname, ".."), "ui/dist"),
-);
+const DIST = path.resolve(__dirname, "../ui/dist");
 
 const MIME = {
   ".html": "text/html; charset=utf-8",

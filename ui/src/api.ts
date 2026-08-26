@@ -1,8 +1,8 @@
-// 统一的一个 item:kind 区分它是空间 / 智能体 / 文件。
-// 文件夹和文件在文件树上;智能体是会话(住 SQLite),只通过 workdir 绑定一个目录。
+// 统一树的一个 item:kind 区分它是空间 / 智能体 / 文件。
+// 存储在后端拆成 nodes / agents / files 三类,这里合成一棵树。
 export type Node = {
   id: string;
-  parent_id: string | null;                                      // 所在空间(根 = null;agent 恒为 null)
+  parent_id: string | null;                                      // 所在空间(根 = null)
   kind: "space" | "agent" | "file";
   title: string;
   system: string | null;                                         // 仅 agent:人格
@@ -10,9 +10,7 @@ export type Node = {
   position: number | null;
   last_read_at: string | null;                                   // 仅 agent
   created_at: string;
-  workdir?: string;                                              // 仅 agent:绑定的工作目录
-  pinned?: boolean;                                              // 仅 agent:置顶
-  status?: "idle" | "running" | "done" | "error" | "cancelled";  // 仅 agent(界面按运行事件维护)
+  status?: "idle" | "running" | "done" | "error" | "cancelled";  // 仅 agent,来自最新 call
   unread?: boolean;                                              // 仅 agent
   size?: number;                                                 // 仅 file:字节数
   binary?: boolean;                                              // 仅 file:二进制,无法当文本预览
@@ -23,28 +21,13 @@ export type Node = {
 export type SearchMatch = { line: number; text: string };
 export type SearchResult = { id: string; title: string; matches: SearchMatch[] };
 
-/** 侧栏「网站」页收藏的链接。 */
-export type Site = { id: string; title: string; url: string; created_at: string };
-
-/** 落库的 Responses item(body 解析后):user/system 消息、reasoning、message、function_call、function_call_output。 */
-export type StoredItem = {
-  type?: string;
-  role?: string;
-  content?: string | Array<{ type?: string; text?: string }> | null;
-  summary?: Array<{ text?: string }>;
-  call_id?: string;
-  name?: string;
-  arguments?: string;
-  output?: string;
-};
-
-/** 邮箱里的一行:一行一个 item。 */
-export type MessageRow = {
-  id: number;
-  item: StoredItem;
-  meta: Record<string, any> | null;
-  usage: Record<string, any> | null;
-  created_at: string;
+export type Message = {
+  _id?: number;
+  role: string;
+  content?: string;
+  tool_calls?: any[];
+  tool_call_id?: string;
+  _meta?: Record<string, any>;
 };
 
 export type Call = {
@@ -154,38 +137,18 @@ export const api = {
     request<{ results: SearchResult[] }>(`/api/search?q=${encodeURIComponent(q)}`),
   getNode: (id: string) =>
     request<{ item: Node }>(`/api/tree/get?id=${encodeURIComponent(id)}`).then(one),
-  createNode: (opts: { kind: "space" | "file"; title: string; parentId?: string; content?: string }) =>
+  createNode: (opts: { kind: Node["kind"]; title: string; parentId?: string; system?: string; content?: string }) =>
     request<{ item: Node }>("/api/tree", { method: "POST", ...jsonBody(opts) }).then(one),
-  updateNode: (id: string, patch: { title?: string; content?: string; parentId?: string | null }) =>
+  updateNode: (id: string, patch: { title?: string; content?: string; system?: string; parentId?: string | null }) =>
     request<{ item: Node }>(`/api/tree?id=${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(patch) }).then(one),
   moveNode: (id: string, newParentId: string | null, position?: number) =>
     request<{ item: Node }>(`/api/tree?id=${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody({ parentId: newParentId, position }) }).then(one),
+  markNodeRead: (id: string) =>
+    request<{ item: Node }>(`/api/tree/read?id=${encodeURIComponent(id)}`, { method: "POST" }).then(one),
   deleteNode: (id: string) =>
     request<{ ok: boolean }>(`/api/tree?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
   ancestry: (id: string) =>
     request<{ ancestry: Node[] }>(`/api/ancestry?id=${encodeURIComponent(id)}`),
-
-  // ── 智能体(会话列表)──
-  listAgents: () => request<{ agents: Node[] }>("/api/agents").then((d) => ({ agents: (d.agents || []) as Node[] })),
-  getAgent: (id: string) =>
-    request<{ item: Node }>(`/api/agents/get?id=${encodeURIComponent(id)}`).then(one),
-  createAgent: (opts: { title: string; workdir?: string; system?: string }) =>
-    request<{ item: Node }>("/api/agents", { method: "POST", ...jsonBody(opts) }).then(one),
-  updateAgent: (id: string, patch: { title?: string; system?: string; workdir?: string; pinned?: boolean }) =>
-    request<{ item: Node }>(`/api/agents?id=${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(patch) }).then(one),
-  deleteAgent: (id: string) =>
-    request<{ ok: boolean }>(`/api/agents?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
-  markAgentRead: (id: string) =>
-    request<{ item: Node }>(`/api/agents/read?id=${encodeURIComponent(id)}`, { method: "POST" }).then(one),
-
-  // ── 网站收藏 ──
-  listSites: () => request<{ sites: Site[] }>("/api/sites"),
-  createSite: (opts: { url: string; title?: string }) =>
-    request<{ item: Site }>("/api/sites", { method: "POST", ...jsonBody(opts) }),
-  updateSite: (id: string, patch: { title?: string; url?: string }) =>
-    request<{ item: Site }>(`/api/sites?id=${encodeURIComponent(id)}`, { method: "PATCH", ...jsonBody(patch) }),
-  deleteSite: (id: string) =>
-    request<{ ok: boolean }>(`/api/sites?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   listWorkspaces: () => request<{ workspaces: WorkspaceRoot[] }>("/api/workspaces"),
   pickWorkspaceDirectory: () => request<{ path: string | null }>("/api/workspaces/pick", { method: "POST" }),
@@ -195,9 +158,7 @@ export const api = {
     request<{ ok: boolean; workspace: WorkspaceRoot | null }>(`/api/workspaces?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   listMessages: (agentId: string) =>
-    request<{ rows: MessageRow[] }>(`/api/messages?agentId=${encodeURIComponent(agentId)}`),
-
-  listRuns: () => request<{ ids: string[] }>("/api/runs"),
+    request<{ messages: Message[] }>(`/api/messages?agentId=${encodeURIComponent(agentId)}`),
 
   listCalls: (params: { callerId?: string; calleeId?: string; status?: string } = {}) => {
     const qs = new URLSearchParams();

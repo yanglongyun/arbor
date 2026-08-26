@@ -1,8 +1,7 @@
 import type { Settings, Node } from "../../api";
 import { TabBar } from "./TabBar";
 import { TabContent } from "./TabContent";
-import { WebPanel } from "./panels/WebPanel";
-import { isWebTab, type WebTab, type WorkspaceGroupId, type WorkspaceGroupState, type WorkspaceTab } from "./types";
+import type { WorkspaceGroupId, WorkspaceGroupState, WorkspaceTab } from "./types";
 
 type Socket = {
   send: (m: any) => void;
@@ -43,7 +42,6 @@ export function WorkspaceGroup({
   onSettingsSaved,
   onGitChanged,
   onOpenGitDiff,
-  onUpdateWebTab,
 }: {
   group: WorkspaceGroupState;
   active: boolean;
@@ -75,10 +73,8 @@ export function WorkspaceGroup({
   onSettingsSaved?: (settings: Settings) => void;
   onGitChanged?: () => void;
   onOpenGitDiff: (root: string, path: string, staged?: boolean) => void;
-  onUpdateWebTab: (id: string, patch: Partial<Pick<WebTab, "title" | "url">>) => void;
 }) {
   const tab = activeTabOf(group);
-  const webTabs = group.tabs.filter(isWebTab);
 
   return (
     <section
@@ -109,9 +105,9 @@ export function WorkspaceGroup({
         onCloseGroup={() => onCloseGroup(group.id)}
         onOpenNav={showNavButton ? onOpenNav : undefined}
       />
-      <div className="flex-1 min-h-0 flex flex-col relative">
+      <div className="flex-1 min-h-0 flex flex-col">
         <TabContent
-          tab={isWebTab(tab) ? null : tab}
+          tab={tab}
           socket={socket}
           drafts={drafts}
           fileRefreshKeys={fileRefreshKeys}
@@ -129,15 +125,6 @@ export function WorkspaceGroup({
           onCloseProcess={() => onCloseTab(group.id, group.activeId || "")}
           onCloseTerminal={() => onCloseTab(group.id, group.activeId || "")}
         />
-        {/* 网页标签常驻挂载,CSS 控显隐 —— <webview> 卸载 = 断网重载,登录态全丢 */}
-        {webTabs.map((web) => (
-          <div
-            key={web.id}
-            className={`absolute inset-0 bg-bg ${tab?.id === web.id ? "flex flex-col" : "hidden"}`}
-          >
-            <WebPanel tab={web} onPatch={(patch) => onUpdateWebTab(web.id, patch)} />
-          </div>
-        ))}
       </div>
     </section>
   );

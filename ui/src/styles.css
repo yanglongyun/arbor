@@ -167,22 +167,6 @@ body {
 
 /* 横向滚动隐藏滚动条(面包屑用) */
 .no-scrollbar::-webkit-scrollbar { display: none; }
-
-/* ───────────────────────────────────────────────
-   对话过程行:运行中扫光文字(底色 + 渐变扫过)
-   ─────────────────────────────────────────────── */
-.sheen {
-  color: transparent;
-  background-color: var(--color-text-faint);
-  background-image: linear-gradient(to right, var(--color-text-faint), var(--color-text), var(--color-text-faint));
-  -webkit-background-clip: text;
-  background-clip: text;
-  background-repeat: no-repeat;
-  background-size: 50% 200%;
-  background-position: -100% top;
-  animation: sheen 2.6s infinite;
-}
-@keyframes sheen { to { background-position: 250% top; } }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* ───────────────────────────────────────────────

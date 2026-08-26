@@ -5,9 +5,7 @@ import { fileURLToPath } from "url";
 import { DatabaseSync } from "node:sqlite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// ARBOR_HOME:桌面壳/打包产物用它锚定仓库根 —— 打包后 __dirname 不再是 server/
-const HOME = process.env.ARBOR_HOME || path.join(__dirname, "..");
-const DB_PATH = path.join(HOME, "database/arbor.db");
+const DB_PATH = path.join(__dirname, "../database/arbor.db");
 
 let db;
 
@@ -23,20 +21,6 @@ const initDb = () => {
     --   目录 = 空间,真实文件 = 文件,<uuid>.agent.json = 智能体
     -- SQLite 只存运行时状态:消息流、调用关系、设置。
     --   agent_id / caller_id / callee_id = 智能体的 uuid
-
-    -- 智能体:对话即智能体,绑定(而不是住在)一个真实文件夹。
-    --   从前是 <uuid>.agent.json 落在用户目录里 —— 过程数据污染用户资产,已废弃;
-    --   workdir 是它的家:shell 在这执行,AGENTS.md / skills 从这发现。
-    CREATE TABLE IF NOT EXISTS agents (
-      id           TEXT PRIMARY KEY,
-      title        TEXT NOT NULL,
-      system       TEXT,
-      workdir      TEXT NOT NULL,
-      pinned       INTEGER NOT NULL DEFAULT 0,
-      last_read_at TEXT,
-      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
-    );
 
     -- 消息:每个智能体的邮箱
     CREATE TABLE IF NOT EXISTS messages (
@@ -76,14 +60,6 @@ const initDb = () => {
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
-    );
-
-    -- 网站:侧栏「网站」页收藏的链接(网页标签在 Electron 壳的 <webview> 里打开)
-    CREATE TABLE IF NOT EXISTS sites (
-      id         TEXT PRIMARY KEY,
-      title      TEXT NOT NULL,
-      url        TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS workspaces (
