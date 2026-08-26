@@ -99,6 +99,15 @@ agent 来信 / 子 agent 回信保留居中卡片;运行中扫光、粘底滚动
   静默吞没。修法:useSocket 返回值 useMemo 恒定 + 节流定时器入 ref + 卸载后不再拉起僵尸重连。
   这也是「智能体改完文件树有时不动」的老病根,不只影响新监听器。
 
+### 打包版数据落位(macOS 惯例)
+
+程序、数据、文档三分离:`.app` 只读;**数据库**留 `~/Library/Application Support/arbor/`
+(`ARBOR_HOME` = userData);**默认工作区**改到 `~/Documents/Arbor/`(`ARBOR_WORKSPACES`)——
+工作区是用户要在 Finder 里摸的真实文件树,按「用户文档」惯例放 Documents,不埋 Library
+(对照 Obsidian vault / Logseq graph)。开发态两者仍在仓库根,行为不变。
+顺带清掉了种子期误留的 AppSupport 工作区副本(与仓库树同 UUID 的重复 agent),
+仓库那棵树在桌面 App 里改名「arbor」,不再和默认根同名。
+
 ## 已知限制 / 下一步
 
 - 打包只出 mac-arm64 的 dir 目标(本机自用);dmg / 多平台 / 公证未做;

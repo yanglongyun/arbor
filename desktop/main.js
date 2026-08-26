@@ -30,7 +30,10 @@ const layout = () => {
     serverEntry: join(res, "core/server.mjs"),
     cwd: join(res, "core"), // node-pty 从 core/node_modules 解析
     env: {
-      ARBOR_HOME: app.getPath("userData"), // database/ 与 workspaces/ 落在这里
+      ARBOR_HOME: app.getPath("userData"), // database/ 落在这里(macOS 惯例:应用数据进 Application Support)
+      // 工作区是用户要在 Finder 里摸的真实文件树 —— 按「用户文档」惯例放 Documents,
+      // 不埋进 Library(对照 Obsidian vault / Logseq graph 的默认位置)
+      ARBOR_WORKSPACES: join(app.getPath("documents"), "Arbor"),
       ARBOR_UI_DIST: join(res, "core/ui"),
     },
   };
