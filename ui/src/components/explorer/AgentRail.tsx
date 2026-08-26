@@ -1,6 +1,6 @@
 // 会话列表:智能体不再长在文件树里,这里是它们的家。
 // 置顶 / 最近两组;行上呼吸点 = 正在运行,绿点 = 未读;悬停 ⋯ 出操作。
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Node } from "../../api";
 import { api } from "../../api";
 import { ContextMenu, type MenuItem } from "../ui";
@@ -28,12 +28,9 @@ export function AgentRail({
 }) {
   const [agents, setAgents] = useState<Node[]>([]);
   const [running, setRunning] = useState<Set<string>>(new Set());
-  const [creating, setCreating] = useState<{ workdir?: string } | null>(null);
-  const [draftTitle, setDraftTitle] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const result = await api.listAgents().catch(() => null);
@@ -55,25 +52,20 @@ export function AgentRail({
     return () => { clearInterval(timer); offs.forEach((f) => f()); };
   }, [socket]);
 
-  // 外部请求(文件夹右键「在此新建智能体」)→ 顶部拉起 inline 输入
-  useEffect(() => {
-    if (!createReq) return;
-    setCreating(createReq);
-    setDraftTitle("");
-    onCreateHandled();
-  }, [createReq]);
-  useEffect(() => { if (creating) inputRef.current?.focus(); }, [creating]);
-
-  const commitCreate = async () => {
-    const title = draftTitle.trim();
-    const req = creating;
-    setCreating(null);
-    setDraftTitle("");
-    if (!title || !req) return;
-    const result = await api.createAgent({ title, workdir: req.workdir });
+  // 新建 = 直接开聊:落一条「未命名对话」并打开,名字是系统的事 ——
+  // 首条消息跑完后服务端自动取名(runs 层独立补全调用)
+  const createNow = async (workdir?: string) => {
+    const result = await api.createAgent({ title: "", workdir });
     onSelect(result.node);
     load();
   };
+
+  // 外部请求(顶部 + / 文件夹右键「在此新建对话」)
+  useEffect(() => {
+    if (!createReq) return;
+    onCreateHandled();
+    void createNow(createReq.workdir);
+  }, [createReq]);
 
   const commitRename = async () => {
     const id = renamingId;
@@ -100,7 +92,7 @@ export function AgentRail({
         "divider",
         { label: "删除", icon: <Trash2 size={13} />, danger: true,
           onClick: async () => {
-            if (!confirm(`删除智能体「${agent.title}」?\n它的全部对话记录会一并删除;工作目录里的文件不受影响。`)) return;
+            if (!confirm(`删除对话「${agent.title}」?\n全部消息记录会一并删除;工作目录里的文件不受影响。`)) return;
             await api.deleteAgent(agent.id);
             load();
           } },
@@ -160,24 +152,6 @@ export function AgentRail({
 
   return (
     <div className="flex-1 overflow-y-auto py-1">
-      {creating && (
-        <div className="flex items-center gap-1.5 py-[4px] pl-3 pr-2">
-          <Bot size={14} className="shrink-0 text-warning" />
-          <input
-            ref={inputRef}
-            value={draftTitle}
-            onChange={(e) => setDraftTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitCreate();
-              if (e.key === "Escape") { setCreating(null); setDraftTitle(""); }
-            }}
-            onBlur={commitCreate}
-            placeholder="智能体名…"
-            className="flex-1 min-w-0 bg-white border border-accent rounded px-1 -mx-1 py-px text-[14px] text-text outline-none placeholder:text-text-faint"
-          />
-        </div>
-      )}
-
       {pinned.length > 0 && (<>
         <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-text-faint select-none">置顶</div>
         {pinned.map(row)}
@@ -187,17 +161,17 @@ export function AgentRail({
         {recent.map(row)}
       </>)}
 
-      {agents.length === 0 && !creating && (
+      {agents.length === 0 && (
         <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
           <div className="text-3xl opacity-80">🌱</div>
           <div className="text-[13px] text-text-faint leading-relaxed">
-            还没有智能体。<br />每个智能体都是一段绑定文件夹的对话。
+            还没有对话。<br />每段对话都绑定一个真实文件夹。
           </div>
           <button
-            onClick={() => { setCreating({}); setDraftTitle(""); }}
+            onClick={() => void createNow()}
             className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-[13px] hover:opacity-90 transition-opacity"
           >
-            <Plus size={13} /> 新建智能体
+            <Plus size={13} /> 新建对话
           </button>
         </div>
       )}

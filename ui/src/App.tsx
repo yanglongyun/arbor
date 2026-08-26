@@ -89,7 +89,13 @@ export function App() {
   // 智能体标签页上的状态点/未读点:跟着运行事件走(智能体已不在树上,不再有 tree_changed 带来更新)
   useEffect(() => {
     const set = (id: string, patch: Partial<Node>) => tabGroups.updateNodeTab(String(id), patch as Node);
+    // 标签页存的是 node 快照 —— 自动取名/重命名后把新标题同步过去(挂载时也对齐一次)
+    const syncTitles = () => api.listAgents().then((r) => {
+      for (const a of r.agents) set(a.id, { title: a.title, workdir: a.workdir });
+    }).catch(() => {});
+    syncTitles();
     const offs = [
+      socket.on("agents_changed", syncTitles),
       socket.on(EVENTS.START, (p: any) => set(p.agentId, { status: "running" })),
       socket.on(EVENTS.DONE, (p: any) => set(p.agentId, { status: "idle" })),
       socket.on(EVENTS.ABORTED, (p: any) => set(p.agentId, { status: "idle" })),
@@ -179,15 +185,20 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 在当前选中工作区/文件夹里新建(命令面板用,名字走 prompt)
+  // 在当前选中工作区/文件夹里新建(命令面板用)。
+  // 对话零打扰直接建(默认「未命名对话」,首条消息后系统自动取名);文件类名字走 prompt
   const createAtCurrentTarget = async (kind: "space" | "agent" | "file") => {
-    const title = window.prompt(`新建${kind === "space" ? "文件夹" : kind === "agent" ? "智能体" : "文件"}的名字:`);
-    if (!title || !title.trim()) return;
     try {
       const parentId = currentCreateParentId() || undefined;
-      const r = kind === "agent"
-        ? await api.createAgent({ title: title.trim(), workdir: parentId })
-        : await api.createNode({ kind, title: title.trim(), parentId });
+      if (kind === "agent") {
+        const r = await api.createAgent({ title: "", workdir: parentId });
+        openNode(r.node);
+        setTreeRefresh((n) => n + 1);
+        return;
+      }
+      const title = window.prompt(`新建${kind === "space" ? "文件夹" : "文件"}的名字:`);
+      if (!title || !title.trim()) return;
+      const r = await api.createNode({ kind, title: title.trim(), parentId });
       openNode(r.node);
       setTreeRefresh((n) => n + 1);
     } catch (e: any) {
@@ -202,7 +213,7 @@ export function App() {
   };
 
   const commands: Command[] = [
-    { id: "new-agent", label: "新建智能体", icon: <Bot size={14} />, run: () => createAtCurrentTarget("agent") },
+    { id: "new-agent", label: "新建对话", icon: <Bot size={14} />, run: () => createAtCurrentTarget("agent") },
     { id: "new-space", label: "新建文件夹", icon: <Folder size={14} />, run: () => createAtCurrentTarget("space") },
     { id: "new-file", label: "新建文件", icon: <FileText size={14} />, run: () => createAtCurrentTarget("file") },
     { id: "add-workspace", label: "添加工作区", icon: <FolderPlus size={14} />, run: addWorkspace },

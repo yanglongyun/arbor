@@ -159,7 +159,7 @@ export function MessageStream({ rows, busy, tick, viewSeq }: {
     <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" onScroll={onScroll}>
       <div ref={innerRef} className="mx-auto w-full max-w-3xl px-4 md:px-8 pt-5 pb-3 flex flex-col overflow-x-hidden">
         {!rows.length && !busy && (
-          <div className="text-text-faint text-[14px]">给这个智能体发条消息…</div>
+          <div className="text-text-faint text-[14px]">发条消息,开始这段对话…</div>
         )}
 
         {blocks.map((block) => {

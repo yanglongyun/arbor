@@ -55,7 +55,7 @@ export function NodeTree({
     setSideTab(tab);
     localStorage.setItem("arbor.sideTab", tab);
   };
-  // 文件夹右键「在此新建智能体」→ 切到会话 tab 并带上预设 workdir
+  // 文件夹右键「在此新建对话」→ 切到会话 tab 并带上预设 workdir
   const [agentCreateReq, setAgentCreateReq] = useState<{ workdir?: string } | null>(null);
   // 文件夹徽标:workdir → 绑定的智能体数
   const [agentDirs, setAgentDirs] = useState<Map<string, number>>(new Map());
@@ -272,7 +272,7 @@ export function NodeTree({
     }
     if (node.kind === "space") {
       items.push(
-        { label: "在此新建智能体", icon: <Bot size={13} className="text-warning" />,
+        { label: "在此新建对话", icon: <Bot size={13} className="text-warning" />,
           onClick: () => { switchTab("agents"); setAgentCreateReq({ workdir: node.id }); } },
         "divider",
         { label: "新建文件夹", icon: <Folder size={13} className="text-accent" />,
@@ -362,7 +362,7 @@ export function NodeTree({
     if (mobileOpen) onCloseMobile?.();
   };
 
-  // 「新建」:会话 tab 直接拉起新建智能体;文件 tab 弹文件类菜单
+  // 「新建」:会话 tab 直接新建对话;文件 tab 弹文件类菜单
   const openNewMenu = (e: React.MouseEvent, parentId: string | null = currentCreateParentId()) => {
     if (sideTab === "agents") {
       setAgentCreateReq({});

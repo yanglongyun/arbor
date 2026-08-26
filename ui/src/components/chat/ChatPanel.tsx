@@ -164,7 +164,7 @@ export function ChatPanel({
             ref={inputRef}
             rows={1}
             className="flex-1 bg-transparent text-[15px] text-text placeholder:text-text-faint outline-none resize-none leading-relaxed py-1 overflow-y-auto"
-            placeholder="交给这个智能体一件事… (Enter 发送 · Shift+Enter 换行)"
+            placeholder="发送消息… (Enter 发送 · Shift+Enter 换行)"
             value={prompt}
             onChange={(e) => { setPrompt(e.target.value); persistDraft(e.target.value); }}
             onCompositionStart={() => { composingRef.current = true; }}

@@ -7,12 +7,12 @@
 //   - 异步回信给 caller 并唤醒它;失败也回信,别让调用链干等一个永远不来的结果
 //
 // ai/ 内核完全不知道树/邮箱/进程/调用,所有状态在这里管。
-import { runAgent as runAi } from "../../ai/index.js";
+import { complete, runAgent as runAi } from "../../ai/index.js";
 import { EVENTS } from "../shared/events.js";
 import { buildExecutors, tools } from "../tools/index.js";
 import { buildSystem } from "./system.js";
 import { maybeCompact } from "./compact.js";
-import { createAgent, getAgent, resolveWorkdir, touchAgent } from "../repo/agents.js";
+import { DEFAULT_TITLE, createAgent, getAgent, resolveWorkdir, touchAgent, updateAgent } from "../repo/agents.js";
 import { appendItem, listRows } from "../repo/messages.js";
 import { getLatestCompaction } from "../repo/compactions.js";
 import { createCall, markCallDone, markCallError, markCallRunning } from "../repo/calls.js";
@@ -38,6 +38,32 @@ const messageText = (item) => {
   return "";
 };
 
+/**
+ * 首条消息跑完后给对话取名 —— 独立的一次补全调用,和对话运行完全分离,
+ * 失败退回机械截断(用户消息前 24 字),保证一定脱离「未命名对话」。
+ */
+const autoTitle = async (agentId, rows, finalText, settings) => {
+  const lastUser = [...rows].reverse().find((r) => r.item?.role === "user" && r.meta?.kind === "message")
+    || [...rows].reverse().find((r) => r.item?.role === "user");
+  const ask = String(lastUser?.item?.content || "").replace(/\s+/g, " ").trim();
+  let title = "";
+  try {
+    const result = await complete({
+      responsesUrl: settings.apiUrl,
+      apiKey: settings.apiKey,
+      model: settings.model,
+      errorMaxChars: ERROR_MAX_CHARS,
+      instructions: "为这段对话起一个不超过 16 个字的标题,概括用户想做的事。只输出标题本身,不要引号和句号。",
+      input: [{ role: "user", content: `用户:${ask.slice(0, 1200)}\n\n助手:${String(finalText || "").slice(0, 1200)}` }],
+    });
+    title = String(result.text).replace(/\s+/g, " ").trim().slice(0, 32);
+  } catch { /* 模型起不出来就机械截断 */ }
+  if (!title) title = ask.slice(0, 24);
+  if (!title) return;
+  updateAgent(agentId, { title });
+  emit({ type: "agents_changed" });
+};
+
 /** 停止/出错后,给没等到结果的 function_call 补一条输出,落库并广播。 */
 const settleDanglingCalls = (agentId, items, reason) => {
   const pending = new Map();
@@ -56,6 +82,7 @@ const runAgent = async (agentId, { callerId = null } = {}) => {
   const agent = getAgent(agentId);
   if (!agent) throw new Error(`agent not found: ${agentId}`);
   if (running.has(String(agentId))) throw new Error("already running");
+  const wasUntitled = agent.title === DEFAULT_TITLE;
 
   const settings = getSettings();
   if (!settings.apiUrl || !settings.apiKey || !settings.model) {
@@ -165,6 +192,7 @@ const runAgent = async (agentId, { callerId = null } = {}) => {
     markCallDone(callId, { result: finalText });
     emit({ type: "call_changed", callId, calleeId: agentId });
     emit({ type: EVENTS.DONE, agentId, usage: result.usage || null });
+    if (wasUntitled) void autoTitle(agentId, rows, finalText, settings); // 取名独立走,不挡终局
     replyToCaller(finalText || "(没有正文回复)");
     return finalText;
   } catch (error) {

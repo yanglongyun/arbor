@@ -8,6 +8,9 @@ import path from "path";
 import { getDb } from "../db.js";
 import { ensureRoot, listWorkspaces } from "./tree.js";
 
+// 新对话默认叫这个;首条消息跑完后由 runs 层请模型取正式名字
+const DEFAULT_TITLE = "未命名对话";
+
 const now = () => getDb().prepare("SELECT datetime('now') AS t").get().t;
 
 /** 行 → 统一 Node 形状(kind='agent'),UI 的标签页/聊天面板照旧吃它。 */
@@ -36,13 +39,13 @@ const createAgent = ({ title, system = null, workdir } = {}) => {
   const home = String(workdir || "").trim() || (listWorkspaces()[0]?.path || ensureRoot());
   getDb().prepare(`
     INSERT INTO agents (id, title, system, workdir) VALUES (?, ?, ?, ?)
-  `).run(id, String(title || "新智能体").trim() || "新智能体", system == null ? null : String(system), home);
+  `).run(id, String(title || DEFAULT_TITLE).trim() || DEFAULT_TITLE, system == null ? null : String(system), home);
   return getAgent(id);
 };
 
 const updateAgent = (id, { title, system, workdir, pinned } = {}) => {
   const db = getDb();
-  if (title !== undefined) db.prepare("UPDATE agents SET title = ? WHERE id = ?").run(String(title || "").trim() || "新智能体", String(id));
+  if (title !== undefined) db.prepare("UPDATE agents SET title = ? WHERE id = ?").run(String(title || "").trim() || DEFAULT_TITLE, String(id));
   if (system !== undefined) db.prepare("UPDATE agents SET system = ? WHERE id = ?").run(system == null ? null : String(system), String(id));
   if (workdir !== undefined) db.prepare("UPDATE agents SET workdir = ? WHERE id = ?").run(String(workdir), String(id));
   if (pinned !== undefined) db.prepare("UPDATE agents SET pinned = ? WHERE id = ?").run(pinned ? 1 : 0, String(id));
@@ -119,7 +122,7 @@ const migrateAgentFiles = () => {
       let meta = {};
       try { meta = JSON.parse(fs.readFileSync(abs, "utf8")); } catch { /* 空元数据也照迁 */ }
       const id = meta.id || e.name.slice(0, -ext.length);
-      insert.run(id, String(meta.title || "新智能体"), meta.system ?? null, dir, meta.last_read_at ?? null, meta.created_at ?? null);
+      insert.run(id, String(meta.title || DEFAULT_TITLE), meta.system ?? null, dir, meta.last_read_at ?? null, meta.created_at ?? null);
       try { fs.rmSync(abs, { force: true }); moved += 1; } catch { /* 删不掉就留着,下次再试 */ }
     }
   };
@@ -129,6 +132,7 @@ const migrateAgentFiles = () => {
 };
 
 export {
+  DEFAULT_TITLE,
   listAgents, getAgent, createAgent, updateAgent, deleteAgent,
   markRead, touchAgent, unreadMap, resolveWorkdir, migrateAgentFiles,
 };
